@@ -11,6 +11,7 @@ COPY --from=login /app /login-app
 RUN mkdir -p /tmp/zitadel-pat
 
 COPY proxy.js /proxy.js
+COPY create-pat.js /create-pat.js
 COPY init-steps.yaml /init-steps.yaml
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
