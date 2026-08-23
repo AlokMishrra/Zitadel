@@ -19,6 +19,7 @@ function proxy(req, res, targetPort) {
     path: req.url,
     method: req.method,
     headers: { ...req.headers, host: `127.0.0.1:${targetPort}` },
+    timeout: 30000,
   };
   const proxyReq = http.request(opts, (proxyRes) => {
     res.writeHead(proxyRes.statusCode, proxyRes.headers);
@@ -27,10 +28,23 @@ function proxy(req, res, targetPort) {
   proxyReq.on('error', (e) => {
     log(`Proxy error to port ${targetPort}: ${e.message}`);
     res.writeHead(502);
-    res.end(JSON.stringify({ error: 'upstream_unavailable', port: targetPort }));
+    res.end(JSON.stringify({ error: 'upstream_unavailable', port: targetPort, message: e.message }));
+  });
+  proxyReq.on('timeout', () => {
+    log(`Proxy timeout to port ${targetPort}`);
+    proxyReq.destroy();
+    res.writeHead(504);
+    res.end(JSON.stringify({ error: 'upstream_timeout', port: targetPort }));
   });
   req.pipe(proxyReq);
 }
+
+process.on('uncaughtException', (err) => {
+  log(`UNCAUGHT EXCEPTION: ${err.message}`);
+});
+process.on('unhandledRejection', (reason) => {
+  log(`UNHANDLED REJECTION: ${reason}`);
+});
 
 const server = http.createServer((req, res) => {
   // Health check - always return 200 so Render doesn't kill us during startup

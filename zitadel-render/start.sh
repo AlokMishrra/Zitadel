@@ -29,8 +29,8 @@ for i in $(seq 1 90); do
     break
   fi
   if ! kill -0 $ZITADEL_PID 2>/dev/null; then
-    echo "ERROR: ZITADEL process died"
-    exit 1
+    echo "ERROR: ZITADEL process died during startup, will retry"
+    # Don't exit - the monitor loop will restart it
   fi
   sleep 2
 done
@@ -68,13 +68,13 @@ export ZITADEL_TLS_ENABLED="false"
 export PORT="3000"
 export NODE_ENV="production"
 node apps/login/server.js &
+LOGIN_PID=$!
 sleep 3
 if kill -0 $LOGIN_PID 2>/dev/null; then
   echo "Login UI started successfully"
 else
   echo "ERROR: Login UI failed to start"
 fi
-LOGIN_PID=$!
 echo "Login UI PID: $LOGIN_PID"
 
 # Quick check: wait a moment then verify all ports are listening
@@ -97,19 +97,24 @@ echo "  Login UI:  port 3000"
 
 # Keep running and watch for process deaths
 while true; do
+  if ! kill -0 $PROXY_PID 2>/dev/null; then
+    echo "FATAL: Proxy process died, restarting..."
+    node /proxy.js &
+    PROXY_PID=$!
+  fi
   if ! kill -0 $ZITADEL_PID 2>/dev/null; then
-    echo "FATAL: ZITADEL process died"
-    exit 1
+    echo "WARN: ZITADEL process died, restarting..."
+    PORT=8081 /app/zitadel start-from-init \
+      --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
+      --tlsMode external \
+      --steps /init-steps.yaml &
+    ZITADEL_PID=$!
   fi
   if ! kill -0 $LOGIN_PID 2>/dev/null; then
     echo "WARN: Login UI process died, restarting..."
     cd /login-app
     node apps/login/server.js &
     LOGIN_PID=$!
-  fi
-  if ! kill -0 $PROXY_PID 2>/dev/null; then
-    echo "FATAL: Proxy process died"
-    exit 1
   fi
   sleep 10
 done
