@@ -1,8 +1,6 @@
 Log:
   Level: 'info'
 
-Port: 8081
-
 ExternalSecure: true
 ExternalDomain: zeroschool-zitadel.onrender.com
 ExternalPort: 443

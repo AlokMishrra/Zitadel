@@ -12,9 +12,10 @@ sleep 1
 
 # Start ZITADEL on port 8081
 echo "[2/4] Starting ZITADEL on port 8081..."
-PORT=8081 /app/zitadel start-from-init \
+/app/zitadel start-from-init \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
   --tlsMode external \
+  --httpPort 8081 \
   --steps /init-steps.yaml > /tmp/zitadel-stdout.log 2>&1 &
 ZITADEL_PID=$!
 echo "ZITADEL PID: $ZITADEL_PID"
