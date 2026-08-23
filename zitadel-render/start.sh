@@ -58,9 +58,77 @@ if [ "$ZITADEL_READY" = false ]; then
   dbg "WARNING: ZITADEL did not become healthy in time"
 fi
 
+dbg "Checking ZITADEL CLI..."
+/app/zitadel --version >> /tmp/startup-debug.log 2>&1
+/app/zitadel user pat create --help >> /tmp/startup-debug.log 2>&1
+/app/zitadel user pat add --help >> /tmp/startup-debug.log 2>&1
+
+dbg "Attempting PAT creation via zitadel CLI with masterkey..."
+/app/zitadel user pat create \
+  --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
+  --host zeroschool-zitadel.onrender.com \
+  --insecure \
+  --name "login-pat" \
+  --username "school@zeroschool.localhost" \
+  --exp "2099-01-01T00:00:00Z" > /tmp/pat-cli-output.log 2>&1
+CLI_EXIT=$?
+dbg "PAT CLI create exit: $CLI_EXIT"
+cat /tmp/pat-cli-output.log >> /tmp/startup-debug.log 2>&1
+
+if [ $CLI_EXIT -ne 0 ]; then
+  dbg "Trying alternative CLI command..."
+  /app/zitadel user pat add \
+    --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
+    --host zeroschool-zitadel.onrender.com \
+    --insecure \
+    --name "login-pat" \
+    --username "school@zeroschool.localhost" \
+    --exp "2099-01-01T00:00:00Z" > /tmp/pat-cli-output2.log 2>&1
+  CLI_EXIT2=$?
+  dbg "PAT CLI add exit: $CLI_EXIT2"
+  cat /tmp/pat-cli-output2.log >> /tmp/startup-debug.log 2>&1
+fi
+
+if [ -f /tmp/pat-cli-output.log ]; then
+  TOKEN=$(grep -oP '"token"\s*:\s*"\K[^"]+' /tmp/pat-cli-output.log 2>/dev/null || grep -oE 'token[:\s"]+([A-Za-z0-9_\-]{20,})' /tmp/pat-cli-output.log 2>/dev/null || echo "")
+  if [ -n "$TOKEN" ]; then
+    echo "$TOKEN" > /tmp/login-client.pat
+    dbg "PAT saved from CLI output"
+  fi
+fi
+
+if [ -f /tmp/pat-cli-output2.log ] && [ ! -f /tmp/login-client.pat ]; then
+  TOKEN=$(grep -oP '"token"\s*:\s*"\K[^"]+' /tmp/pat-cli-output2.log 2>/dev/null || grep -oE 'token[:\s"]+([A-Za-z0-9_\-]{20,})' /tmp/pat-cli-output2.log 2>/dev/null || echo "")
+  if [ -n "$TOKEN" ]; then
+    echo "$TOKEN" > /tmp/login-client.pat
+    dbg "PAT saved from CLI add output"
+  fi
+fi
+
+if [ -f /tmp/login-client.pat ]; then
+  PAT_VAL=$(cat /tmp/login-client.pat 2>/dev/null)
+  if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 10 ]; then
+    dbg "PAT created successfully (length=${#PAT_VAL})"
+  else
+    dbg "PAT file has invalid content"
+  fi
+else
+  dbg "PAT not created via CLI, trying device flow in background..."
+  node /create-pat.js > /tmp/pat-create-stdout.log 2>&1 &
+  PAT_BG_PID=$!
+  dbg "PAT background PID: $PAT_BG_PID"
+fi
+
 dbg "[5/5] Starting Login UI on port 3000..."
 cd /login-app
-ZITADEL_SERVICE_USER_TOKEN="no-pat" \
+
+PAT_CONTENT="no-pat"
+if [ -f /tmp/login-client.pat ]; then
+  PAT_CONTENT=$(cat /tmp/login-client.pat 2>/dev/null)
+fi
+
+ZITADEL_API_URL="http://localhost:8081" \
+ZITADEL_SERVICE_USER_TOKEN="$PAT_CONTENT" \
 ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
 CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
 HOSTNAME=0.0.0.0 \
@@ -68,11 +136,6 @@ PORT=3000 \
 node apps/login/server.js > /tmp/login-ui-debug.log 2>&1 &
 LOGIN_PID=$!
 dbg "Login UI PID: $LOGIN_PID"
-
-dbg "Starting PAT creation in background..."
-node /create-pat.js > /tmp/pat-create-stdout.log 2>&1 &
-PAT_BG_PID=$!
-dbg "PAT background PID: $PAT_BG_PID"
 
 dbg "=== All services started ==="
 dbg "Proxy: http://localhost:8080"
@@ -99,7 +162,12 @@ while true; do
   if ! kill -0 $LOGIN_PID 2>/dev/null; then
     dbg "Login UI died, restarting..."
     cd /login-app
-    ZITADEL_SERVICE_USER_TOKEN="no-pat" \
+    PAT_CONTENT="no-pat"
+    if [ -f /tmp/login-client.pat ]; then
+      PAT_CONTENT=$(cat /tmp/login-client.pat 2>/dev/null)
+    fi
+    ZITADEL_API_URL="http://localhost:8081" \
+    ZITADEL_SERVICE_USER_TOKEN="$PAT_CONTENT" \
     ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
     CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
     HOSTNAME=0.0.0.0 \
@@ -116,6 +184,7 @@ while true; do
         kill $LOGIN_PID 2>/dev/null
         sleep 2
         cd /login-app
+        ZITADEL_API_URL="http://localhost:8081" \
         ZITADEL_SERVICE_USER_TOKEN="$PAT_VAL" \
         ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
         CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
