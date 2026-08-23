@@ -113,7 +113,7 @@ async function main() {
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   });
 
-  const keyId = crypto.randomBytes(10).toString('decimal').substring(0, 19);
+  const keyId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
   log('Key ID: ' + keyId);
 
   log('Step 3: Getting max sequence for user...');
