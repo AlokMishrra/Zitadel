@@ -15,14 +15,19 @@ Database:
     Database: zitadel_db
     User:
       Username: 'zitadel_db_user'
+      Password: 'XaZKXwTcIiCchiEi317FvD30faT7m4vd'
       SSL:
         Mode: 'disable'
     Admin:
       Username: 'zitadel_db_user'
+      Password: 'XaZKXwTcIiCchiEi317FvD30faT7m4vd'
       SSL:
         Mode: 'disable'
+
+Port: 8081
 
 DefaultInstance:
   Features:
     LoginV2:
-      Required: false
+      Required: true
+      BaseURI: 'https://zeroschool-zitadel.onrender.com/ui/v2/login'
