@@ -20,12 +20,5 @@ FirstInstance:
         Type: 1
       Pat:
         ExpirationDate: "2099-01-01T00:00:00Z"
-    LoginClient:
-      Machine:
-        Username: login-client
-        Name: Login Client
-      Pat:
-        ExpirationDate: "2099-01-01T00:00:00Z"
   MachineKeyPath: /tmp/machine-key.json
   PatPath: /tmp/admin.pat
-  LoginClientPatPath: /tmp/login-client.pat
