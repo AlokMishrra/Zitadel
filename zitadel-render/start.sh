@@ -33,6 +33,12 @@ ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=admin \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME="Admin Machine User" \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=2 \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE='2099-01-01T00:00:00Z' \
+ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH=/tmp/login-client.pat \
+ZITADEL_FIRSTINSTANCE_LOGINCLIENTMACHINEKEYPATH=/tmp/login-client-key.json \
+ZITADEL_FIRSTINSTANCE_LOGINCLIENT_MACHINE_MACHINE_USERNAME=login-client \
+ZITADEL_FIRSTINSTANCE_LOGINCLIENT_MACHINE_MACHINE_NAME="Login Client" \
+ZITADEL_FIRSTINSTANCE_LOGINCLIENT_MACHINE_MACHINEKEY_TYPE=2 \
+ZITADEL_FIRSTINSTANCE_LOGINCLIENT_MACHINE_PAT_EXPIRATIONDATE='2099-01-01T00:00:00Z' \
 /app/zitadel start-from-init \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
   --tlsMode external \
@@ -60,36 +66,25 @@ if [ "$ZITADEL_READY" = false ]; then
   dbg "WARNING: ZITADEL did not become healthy in time"
 fi
 
-dbg "Creating JWT service token via machine key..."
-node /create-pat.js > /tmp/pat-create-stdout.log 2>&1 &
-PAT_PID=$!
-dbg "PAT creation PID: $PAT_PID"
-
-dbg "Waiting for JWT creation (up to 120s)..."
+dbg "[4/4] Waiting for Login Client PAT from ZITADEL..."
 PAT_READY=false
 for i in $(seq 1 60); do
   if [ -f /tmp/login-client.pat ]; then
     PAT_VAL=$(cat /tmp/login-client.pat 2>/dev/null)
-    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 50 ]; then
-      dbg "JWT ready after $((i*2))s (length=${#PAT_VAL})"
+    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 20 ]; then
+      dbg "Login Client PAT ready after $((i*2))s (length=${#PAT_VAL})"
       PAT_READY=true
       break
     fi
-  fi
-  if ! kill -0 $PAT_PID 2>/dev/null; then
-    dbg "PAT creation process exited"
-    cat /tmp/pat-create-stdout.log >> /tmp/startup-debug.log 2>&1
-    break
   fi
   sleep 2
 done
 
 if [ "$PAT_READY" = false ]; then
-  dbg "WARNING: JWT not created in time"
-  cat /tmp/pat-create-stdout.log >> /tmp/startup-debug.log 2>&1
+  dbg "WARNING: Login Client PAT not created in time"
 fi
 
-dbg "[4/4] Starting Login UI on port 3000..."
+dbg "[5/5] Starting Login UI on port 3000..."
 cd /login-app
 
 PAT_CONTENT="no-pat"
@@ -148,9 +143,9 @@ while true; do
 
   if [ -f /tmp/login-client.pat ]; then
     PAT_VAL=$(cat /tmp/login-client.pat 2>/dev/null)
-    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 50 ]; then
+    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 20 ]; then
       if [ "$LAST_PAT_CHECK" != "valid" ]; then
-        dbg "JWT detected (length=${#PAT_VAL}), restarting Login UI with valid token..."
+        dbg "Login Client PAT detected (length=${#PAT_VAL}), restarting Login UI with token..."
         kill $LOGIN_PID 2>/dev/null
         sleep 2
         cd /login-app
