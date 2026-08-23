@@ -45,8 +45,9 @@
         document.getElementById('infoLogin').textContent = user.loginName || '-';
         document.getElementById('infoRole').textContent = user.role || '-';
         const clientId = '387163800052170755';
-        const loginHint = encodeURIComponent(user.loginName + '@zeroschool.localhost');
-        document.getElementById('consoleLink').href = `http://localhost:8080/oauth/v2/authorize?client_id=${clientId}&response_type=code&scope=openid%20profile%20email&login_hint=${loginHint}&prompt=login&redirect_uri=${encodeURIComponent('http://localhost:8080/ui/console')}`;
+        const zitadelBase = 'https://zeroschool-zitadel.onrender.com';
+        const loginHint = encodeURIComponent(user.loginName);
+        document.getElementById('consoleLink').href = `${zitadelBase}/oauth/v2/authorize?client_id=${clientId}&response_type=code&scope=openid%20profile%20email&login_hint=${loginHint}&prompt=login&redirect_uri=${encodeURIComponent(zitadelBase + '/ui/console')}`;
         const sm = document.getElementById('successMsg');
         sm.textContent = 'Account created successfully! You are now signed in.';
         sm.style.display = 'block';

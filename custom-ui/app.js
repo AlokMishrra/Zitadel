@@ -42,7 +42,7 @@ if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__di
 
 const PORT = 3000;
 const ZITADEL_EXTERNAL = process.env.ZITADEL_EXTERNAL_ISSUER || 'http://localhost:8080';
-const ZITADEL_INTERNAL = process.env.ZITADEL_MANAGEMENT_URL || 'http://zitadel:8080';
+const ZITADEL_INTERNAL = process.env.ZITADEL_INTERNAL || 'http://zitadel:8080';
 const PAT_FILE = process.env.PAT_FILE || '/zitadel/bootstrap/admin.pat';
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || '387166122471849987';
 
