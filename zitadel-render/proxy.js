@@ -14,12 +14,14 @@ function log(msg) {
 }
 
 function proxy(req, res, targetPort) {
+  const headers = { ...req.headers };
+  headers.host = 'zeroschool-zitadel.onrender.com';
   const opts = {
     hostname: '127.0.0.1',
     port: targetPort,
     path: req.url,
     method: req.method,
-    headers: { ...req.headers, host: `127.0.0.1:${targetPort}` },
+    headers,
     timeout: 30000,
   };
   const proxyReq = http.request(opts, (proxyRes) => {
