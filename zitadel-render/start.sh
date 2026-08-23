@@ -45,40 +45,29 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
-# Prepare PAT for login UI
-LOGIN_PAT_FILE="/tmp/zitadel-pat/token"
+# Read PAT into env var (like the login entrypoint does)
+LOGIN_PAT=""
 if [ -f /tmp/login-client.pat ]; then
-  cp /tmp/login-client.pat "$LOGIN_PAT_FILE"
-  echo "Using login-client PAT"
+  LOGIN_PAT=$(cat /tmp/login-client.pat)
+  echo "login-client PAT loaded ($(echo -n "$LOGIN_PAT" | wc -c) bytes)"
 elif [ -f /tmp/admin.pat ]; then
-  cp /tmp/admin.pat "$LOGIN_PAT_FILE"
-  echo "Using admin PAT"
+  LOGIN_PAT=$(cat /tmp/admin.pat)
+  echo "admin PAT loaded ($(echo -n "$LOGIN_PAT" | wc -c) bytes)"
 else
   echo "WARNING: No PAT file found"
-  touch "$LOGIN_PAT_FILE"
 fi
 
-echo "PAT file contents: $(head -c 20 $LOGIN_PAT_FILE)..."
-echo "PAT file size: $(wc -c < $LOGIN_PAT_FILE) bytes"
-
-# Start Login UI
+# Start Login UI with PAT in env var
 echo "Starting Login UI on port 3000..."
 cd /login-app
-PORT=3000 \
-NODE_ENV=production \
-NODE_OPTIONS="--use-openssl-ca --require /login-app/load-ssl-cert-dir.cjs" \
-ZITADEL_TLS_ENABLED=false \
-ZITADEL_API_URL="http://localhost:8081" \
-NEXT_PUBLIC_BASE_PATH="/ui/v2/login" \
-ZITADEL_SERVICE_USER_TOKEN_FILE="$LOGIN_PAT_FILE" \
-CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
+export ZITADEL_SERVICE_USER_TOKEN="$LOGIN_PAT"
 node apps/login/server.js &
 LOGIN_PID=$!
 echo "Login UI PID: $LOGIN_PID"
 
 echo "=== All services started ==="
 echo "  nginx:    port 8080"
-echo "  ZITADEL:  port 8081"
+echo "  ZITADEL:  port 8081"  
 echo "  Login UI: port 3000"
 
 # Keep running
