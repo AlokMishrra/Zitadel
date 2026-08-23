@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 
 const ZITADEL_PORT = 8081;
+const LOGIN_PORT = 3000;
 
 const logs = [];
 function log(msg) {
@@ -41,6 +42,14 @@ function proxy(req, res, targetPort) {
     res.end(JSON.stringify({ error: 'upstream_timeout', port: targetPort }));
   });
   req.pipe(proxyReq);
+}
+
+function routeRequest(req) {
+  const url = req.url || '';
+  if (url.startsWith('/ui/v2/login') || url.startsWith('/ui/v2/login/')) {
+    return LOGIN_PORT;
+  }
+  return ZITADEL_PORT;
 }
 
 process.on('uncaughtException', (err) => {
@@ -87,8 +96,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  log(`ZITADEL -> port ${ZITADEL_PORT}: ${req.method} ${req.url}`);
-  proxy(req, res, ZITADEL_PORT);
+  if (req.url === '/debug/pat-status') {
+    try {
+      const out = fs.readFileSync('/tmp/pat-creation-status.txt', 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(out.slice(-5000));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('No PAT creation logs: ' + e.message);
+    }
+    return;
+  }
+
+  if (req.url === '/debug/login-ui') {
+    try {
+      const out = fs.readFileSync('/tmp/login-ui-debug.log', 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(out.slice(-5000));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('No Login UI logs: ' + e.message);
+    }
+    return;
+  }
+
+  const targetPort = routeRequest(req);
+  log(`${targetPort === LOGIN_PORT ? 'LOGIN' : 'ZITADEL'} -> port ${targetPort}: ${req.method} ${req.url}`);
+  proxy(req, res, targetPort);
 });
 
 server.listen(8080, '0.0.0.0', () => {

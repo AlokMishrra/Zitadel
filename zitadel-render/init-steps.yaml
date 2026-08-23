@@ -17,8 +17,19 @@ FirstInstance:
         Username: admin
         Name: Admin Machine User
       MachineKey:
-        Type: 1
+        Type: 2
       Pat:
         ExpirationDate: "2099-01-01T00:00:00Z"
   MachineKeyPath: /tmp/machine-key.json
   PatPath: /tmp/admin.pat
+  LoginClient:
+    Machine:
+      Machine:
+        Username: login-client
+        Name: Login Client
+    MachineKey:
+      Type: 2
+    Pat:
+      ExpirationDate: "2099-01-01T00:00:00Z"
+    MachineKeyPath: /tmp/login-client-key.json
+    PatPath: /tmp/login-client.pat
