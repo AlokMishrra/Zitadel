@@ -1,6 +1,10 @@
 FirstInstance:
   InstanceName: ZeroSchool
   DefaultLanguage: en
+  Customizations:
+    Login:
+      LoginV2:
+        Disabled: true
   Org:
     Name: ZeroSchool
     Human:
