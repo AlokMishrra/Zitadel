@@ -218,6 +218,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url.startsWith('/ui/console/auth/callback')) {
+    const parsedUrl = new URL(req.url, 'http://localhost');
+    const code = parsedUrl.searchParams.get('code');
+    const state = parsedUrl.searchParams.get('state');
+    const error = parsedUrl.searchParams.get('error');
+    if (code) {
+      log('OIDC callback received code (length=' + code.length + ') state=' + state);
+      try { fs.writeFileSync('/tmp/oidc-auth-code.txt', code); } catch (e) {}
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<html><body><h1>Authorization successful!</h1><p>Code captured. You can close this window.</p></body></html>');
+    } else if (error) {
+      log('OIDC callback error: ' + error);
+      res.writeHead(400, { 'Content-Type': 'text/html' });
+      res.end('<html><body><h1>Error</h1><p>' + error + '</p></body></html>');
+    } else {
+      log('OIDC callback with no code or error');
+      res.writeHead(400, { 'Content-Type': 'text/html' });
+      res.end('<html><body><h1>No authorization code received</h1></body></html>');
+    }
+    return;
+  }
+
   if (req.url === '/api/save-pat' && req.method === 'POST') {
     try {
       const body = await readBody(req);
