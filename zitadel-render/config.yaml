@@ -1,0 +1,28 @@
+Log:
+  Level: 'info'
+
+ExternalSecure: true
+ExternalDomain: zeroschool-zitadel.onrender.com
+ExternalPort: 443
+
+TLS:
+  Enabled: false
+
+Database:
+  postgres:
+    Host: 'dpg-da47aj2jobas73aeuag0-a'
+    Port: 5432
+    Database: zitadel_db
+    User:
+      Username: 'zitadel_db_user'
+      SSL:
+        Mode: 'disable'
+    Admin:
+      Username: 'zitadel_db_user'
+      SSL:
+        Mode: 'disable'
+
+DefaultInstance:
+  Features:
+    LoginV2:
+      Required: false
