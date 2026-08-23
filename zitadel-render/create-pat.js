@@ -24,7 +24,7 @@ function log(msg) {
 function psql(sql) {
   try {
     const escaped = sql.replace(/"/g, '\\"');
-    const cmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -t -A -c "${escaped}"`;
+    const cmd = `PGPASSWORD='${DB_PASS}' psql "sslmode=require host=${DB_HOST} port=${DB_PORT} dbname=${DB_NAME} user=${DB_USER}" -t -A -c "${escaped}"`;
     return execSync(cmd, { timeout: 15000, encoding: 'utf8' }).trim();
   } catch (e) {
     log('psql error: ' + (e.stderr || e.message));

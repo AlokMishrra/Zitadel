@@ -153,7 +153,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const safeQuery = query.replace(/'/g, "'\\''");
-      const psqlCmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -t -A -c '${safeQuery}'`;
+      const psqlCmd = `PGPASSWORD='${DB_PASS}' psql "sslmode=require host=${DB_HOST} port=${DB_PORT} dbname=${DB_NAME} user=${DB_USER}" -t -A -c '${safeQuery}'`;
       log('DB debug query: ' + query.slice(0, 200));
       exec(psqlCmd, { timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
@@ -170,35 +170,6 @@ const server = http.createServer(async (req, res) => {
       log('DB debug exception: ' + e.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));
-    }
-    return;
-  }
-
-  if (req.url && req.url.startsWith('/debug/db')) {
-    const secret = req.headers['x-debug-secret'];
-    if (secret !== 'debug-secret-2024') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'forbidden' }));
-      return;
-    }
-    const urlObj = new URL(req.url, 'http://localhost');
-    const q = urlObj.searchParams.get('q');
-    if (!q) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'missing q parameter' }));
-      return;
-    }
-    try {
-      const { execSync } = require('child_process');
-      const result = execSync(
-        `PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -t -A -c "${q.replace(/"/g, '\\"')}"`,
-        { timeout: 15000, encoding: 'utf8' }
-      );
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end(result);
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'text/plain' });
-      res.end('Error: ' + (e.stderr || e.message));
     }
     return;
   }
