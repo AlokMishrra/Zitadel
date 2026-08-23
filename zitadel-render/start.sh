@@ -22,8 +22,9 @@ ZITADEL_EXTERNALDOMAIN=zeroschool-zitadel.onrender.com \
 ZITADEL_EXTERNALPORT=443 \
 ZITADEL_EXTERNALSECURE=true \
 ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED=true \
-ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI=https://zeroschool-zitadel.onrender.com/ui/v2/login \
+ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI="https://zeroschool-zitadel.onrender.com/ui/v2/login" \
 ZITADEL_FIRSTINSTANCE_INSTANCENAME=ZeroSchool \
+ZITADEL_FIRSTINSTANCE_DEFAULTLANGUAGE=en \
 ZITADEL_FIRSTINSTANCE_ORG_NAME=ZeroSchool \
 ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME=school@zeroschool.localhost \
 ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME=Swastik \
@@ -43,8 +44,7 @@ ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME="Login Client" \
 ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE='2099-01-01T00:00:00Z' \
 /app/zitadel start-from-init \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
-  --tlsMode external \
-  --steps /init-steps.yaml > /tmp/zitadel-stdout.log 2>&1 &
+  --tlsMode external > /tmp/zitadel-stdout.log 2>&1 &
 ZITADEL_PID=$!
 dbg "ZITADEL PID: $ZITADEL_PID"
 
@@ -73,9 +73,9 @@ node /create-pat.js > /tmp/pat-create-stdout.log 2>&1 &
 PAT_PID=$!
 dbg "PAT creation PID: $PAT_PID"
 
-dbg "Waiting for Login Client PAT (up to 120s)..."
+dbg "Waiting for Login Client PAT (up to 180s)..."
 PAT_READY=false
-for i in $(seq 1 60); do
+for i in $(seq 1 90); do
   if [ -f /tmp/login-client.pat ]; then
     PAT_VAL=$(cat /tmp/login-client.pat 2>/dev/null)
     if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 20 ]; then
@@ -118,7 +118,6 @@ fi
 
 ZITADEL_API_URL="http://localhost:8081" \
 ZITADEL_SERVICE_USER_TOKEN="$PAT_CONTENT" \
-ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
 NEXT_PUBLIC_BASE_PATH=/ui/v2/login \
 CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com" \
 HOSTNAME=0.0.0.0 \
@@ -140,9 +139,9 @@ while true; do
     PROXY_PID=$!
   fi
   if ! kill -0 $ZITADEL_PID 2>/dev/null; then
-    dbg "ZITADEL died, restarting with start-from-setup..."
+    dbg "ZITADEL died, restarting..."
     ZITADEL_PORT=8081 \
-    /app/zitadel start-from-setup \
+    /app/zitadel start-from-init \
       --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
       --tlsMode external > /tmp/zitadel-stdout.log 2>&1 &
     ZITADEL_PID=$!
@@ -161,7 +160,6 @@ while true; do
     fi
     ZITADEL_API_URL="http://localhost:8081" \
     ZITADEL_SERVICE_USER_TOKEN="$PAT_CONTENT" \
-    ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
     NEXT_PUBLIC_BASE_PATH=/ui/v2/login \
     CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com" \
     HOSTNAME=0.0.0.0 \
@@ -180,7 +178,6 @@ while true; do
         cd /login-app
         ZITADEL_API_URL="http://localhost:8081" \
         ZITADEL_SERVICE_USER_TOKEN="$PAT_VAL" \
-        ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
         NEXT_PUBLIC_BASE_PATH=/ui/v2/login \
         CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com" \
         HOSTNAME=0.0.0.0 \

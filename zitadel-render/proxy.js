@@ -146,6 +146,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url === '/debug/pat-files') {
+    try {
+      const files = ['/tmp/login-client.pat', '/tmp/admin.pat', '/tmp/machine-key.json'];
+      const result = {};
+      for (const f of files) {
+        try {
+          const stat = fs.statSync(f);
+          const content = fs.readFileSync(f, 'utf8');
+          result[f] = { exists: true, size: stat.size, preview: content.substring(0, 80) };
+        } catch (e) {
+          result[f] = { exists: false };
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result, null, 2));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   if (req.url === '/debug/login-ui') {
     try {
       const out = fs.readFileSync('/tmp/login-ui-debug.log', 'utf8');
