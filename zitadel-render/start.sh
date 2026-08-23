@@ -67,13 +67,19 @@ export NEXT_PUBLIC_BASE_PATH="/ui/v2/login"
 export ZITADEL_TLS_ENABLED="false"
 export PORT="3000"
 export NODE_ENV="production"
-node apps/login/server.js > /tmp/login-stdout.log 2>&1 &
+echo "LOGIN_PAT length: $(echo -n "$LOGIN_PAT" | wc -c)"
+echo "ZITADEL_SERVICE_USER_TOKEN length: $(echo -n "$ZITADEL_SERVICE_USER_TOKEN" | wc -c)"
+ls -la /login-app/apps/login/server.js || echo "WARN: server.js not found"
+node --trace-warnings apps/login/server.js > /tmp/login-stdout.log 2>&1 &
 LOGIN_PID=$!
-sleep 3
+sleep 5
 if kill -0 $LOGIN_PID 2>/dev/null; then
-  echo "Login UI started successfully"
+  echo "Login UI started successfully (PID: $LOGIN_PID)"
+  # Check if port 3000 is actually listening
+  netstat -tlnp 2>/dev/null | grep 3000 || echo "WARN: port 3000 not in netstat"
 else
-  echo "ERROR: Login UI failed to start"
+  echo "ERROR: Login UI failed to start within 5s"
+  cat /tmp/login-stdout.log
 fi
 echo "Login UI PID: $LOGIN_PID"
 
