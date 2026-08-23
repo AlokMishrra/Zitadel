@@ -23,12 +23,12 @@ const upload = multer({ dest: path.join(__dirname, 'uploads') });
 app.get('/api/wipe-db', async (req, res) => {
   try {
     const c = new Client({
-      host: 'dpg-da47aj2jobas73aeuag0-a.oregon-postgres.render.com',
+      host: 'dpg-da47aj2jobas73aeuag0-a',
       port: 5432,
       database: 'zitadel_db',
       user: 'zitadel_db_user',
       password: 'XaZKXwTcIiCchiEi317FvD30faT7m4vd',
-      ssl: { rejectUnauthorized: false }
+      ssl: false
     });
     await c.connect();
     await c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
