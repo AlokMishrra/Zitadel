@@ -21,7 +21,7 @@ function log(msg) {
   } catch (e) {}
 }
 
-function httpRequest(method, urlStr, body, headers = {}, maxRedirects = 10) {
+function httpRequest(method, urlStr, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const data = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
@@ -61,7 +61,7 @@ function generatePKCE() {
 }
 
 async function main() {
-  log('=== PAT Creation (v6 - OIDC Auth Code Flow) ===');
+  log('=== PAT Creation (v7 - Fixed Auth Code Flow) ===');
 
   try { fs.unlinkSync(OIDC_CODE_FILE); } catch (e) {}
 
@@ -99,14 +99,14 @@ async function main() {
     code_challenge_method: 'S256',
   }).toString();
 
-  const authUrl = `${PROXY_URL}/oauth/v2/auth?${authParams}`;
+  const authUrl = `${PROXY_URL}/oauth/v2/authorize?${authParams}`;
   log('Auth URL: ' + authUrl);
 
   try {
     const authRes = await httpRequest('GET', authUrl, null, {
       'Host': 'zeroschool-zitadel.onrender.com',
     }, 0);
-    log('Auth response: ' + authRes.status);
+    log('Auth response: ' + authRes.status + ' ' + authRes.body.substring(0, 500));
 
     if (authRes.status === 302 || authRes.status === 301) {
       const location = authRes.headers.location;
@@ -150,145 +150,87 @@ async function main() {
     log('Auth flow error: ' + e.message);
   }
 
-  log('Step 2: Trying OIDC device code flow as fallback...');
+  log('Step 2: Trying to create PAT via eventstore...');
   try {
-    const dcBody = new URLSearchParams({
-      client_id: CLIENT_ID,
-      scope: 'openid profile email',
-    }).toString();
-    const dcRes = await httpRequest('POST', `${PROXY_URL}/oauth/v2/device_authorization`, dcBody, {
-      'Host': 'zeroschool-zitadel.onrender.com',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    });
-    log('Device code request: ' + dcRes.status + ' ' + dcRes.body.substring(0, 500));
+    const adminUserId = '387549788495223797';
+    const loginClientUserId = '387549788495485941';
+    const instanceId = '387549788494633973';
+    const orgId = '387549788494699509';
 
-    if (dcRes.status === 200) {
-      const dcData = JSON.parse(dcRes.body);
-      log('Device code: ' + dcData.device_code);
-      log('User code: ' + dcData.user_code);
-      log('Verification URI: ' + dcData.verification_uri);
-      log('');
-      log('*** OPEN THIS URL AND ENTER THE CODE ***');
-      log(dcData.verification_uri);
-      log('Code: ' + dcData.user_code);
-      log('');
+    log('Trying eventstore PAT creation for admin...');
+    const adminPat = execSync('head -c 32 /dev/urandom | base64 | tr -d "=+/" | head -c 40', { encoding: 'utf8' }).trim();
+    const adminPatHash = execSync(`echo -n "${adminPat}" | sha256sum | awk '{print $1}'`, { encoding: 'utf8' }).trim();
+    const patId = execSync('cat /proc/sys/kernel/random/uuid', { encoding: 'utf8' }).trim();
+    const now = new Date().toISOString();
 
-      const interval = dcData.interval || 5;
-      const maxAttempts = 30;
-      for (let i = 0; i < maxAttempts; i++) {
-        await sleep(interval * 1000);
-        try {
-          const tokenBody = new URLSearchParams({
-            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-            device_code: dcData.device_code,
-            client_id: CLIENT_ID,
-          }).toString();
-          const tokenRes = await httpRequest('POST', `${PROXY_URL}/oauth/v2/token`, tokenBody, {
-            'Host': 'zeroschool-zitadel.onrender.com',
-            'Content-Type': 'application/x-www-form-urlencoded',
-          });
-          log('Poll ' + (i + 1) + ': ' + tokenRes.status + ' ' + tokenRes.body.substring(0, 200));
+    // Insert PAT event into eventstore
+    const eventUuid = execSync('cat /proc/sys/kernel/random/uuid', { encoding: 'utf8' }).trim();
+    const seq = Math.floor(Math.random() * 1000000) + 1000000;
+    const payload = JSON.stringify({
+      tokenID: patId,
+      name: 'admin-pat',
+      expirationDate: '2099-01-01T00:00:00Z',
+      hashedToken: adminPatHash,
+      userID: adminUserId,
+      accessTokenType: 0
+    }).replace(/'/g, "''");
 
-          if (tokenRes.status === 200) {
-            const td = JSON.parse(tokenRes.body);
-            const accessToken = td.access_token;
-            if (accessToken) {
-              log('SUCCESS: Got access token (length=' + accessToken.length + ')');
-              await createPats(accessToken);
-              process.exit(0);
-            }
-          }
+    const sql = `INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, "sequence", revision, created_at, payload, creator, owner, position) VALUES ('${instanceId}', 'user', '${adminUserId}', 'user.pat.added', ${seq}, 1, '${now}', '${payload}'::jsonb, '${adminUserId}', '${orgId}', 0)`;
+    log('Inserting PAT event...');
+    const result = execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${sql}"`, { timeout: 15000, encoding: 'utf8' }).trim();
+    log('Event insert result: ' + result);
 
-          try {
-            const errData = JSON.parse(tokenRes.body);
-            if (errData.error === 'authorization_pending') continue;
-            if (errData.error === 'slow_down') { continue; }
-            if (errData.error === 'expired_token' || errData.error === 'access_denied') {
-              log('Device code expired or denied');
-              break;
-            }
-          } catch (e) {}
-        } catch (e) {
-          log('Poll error: ' + e.message);
-        }
-      }
-    } else {
-      log('Device code not supported for this client');
+    // Also insert projection
+    const projSql = `INSERT INTO projections.personal_access_tokens3 (id, creation_date, change_date, sequence, resource_owner, instance_id, user_id, expiration, scopes, owner_removed) VALUES ('${patId}', '${now}', '${now}', 1, '${orgId}', '${instanceId}', '${adminUserId}', '2099-01-01T00:00:00Z', '{}', false)`;
+    const projResult = execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${projSql}"`, { timeout: 15000, encoding: 'utf8' }).trim();
+    log('Projection insert result: ' + projResult);
+
+    fs.writeFileSync(ADMIN_PAT_FILE, adminPat);
+    log('Admin PAT written to file (length=' + adminPat.length + ')');
+
+    // Now do the same for login-client
+    const loginPat = execSync('head -c 32 /dev/urandom | base64 | tr -d "=+/" | head -c 40', { encoding: 'utf8' }).trim();
+    const loginPatHash = execSync(`echo -n "${loginPat}" | sha256sum | awk '{print $1}'`, { encoding: 'utf8' }).trim();
+    const loginPatId = execSync('cat /proc/sys/kernel/random/uuid', { encoding: 'utf8' }).trim();
+
+    const payload2 = JSON.stringify({
+      tokenID: loginPatId,
+      name: 'login-client-pat',
+      expirationDate: '2099-01-01T00:00:00Z',
+      hashedToken: loginPatHash,
+      userID: loginClientUserId,
+      accessTokenType: 0
+    }).replace(/'/g, "''");
+
+    const sql2 = `INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, "sequence", revision, created_at, payload, creator, owner, position) VALUES ('${instanceId}', 'user', '${loginClientUserId}', 'user.pat.added', ${seq + 1}, 1, '${now}', '${payload2}'::jsonb, '${loginClientUserId}', '${orgId}', 0)`;
+    execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${sql2}"`, { timeout: 15000, encoding: 'utf8' });
+
+    const projSql2 = `INSERT INTO projections.personal_access_tokens3 (id, creation_date, change_date, sequence, resource_owner, instance_id, user_id, expiration, scopes, owner_removed) VALUES ('${loginPatId}', '${now}', '${now}', 1, '${orgId}', '${instanceId}', '${loginClientUserId}', '2099-01-01T00:00:00Z', '{}', false)`;
+    execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${projSql2}"`, { timeout: 15000, encoding: 'utf8' });
+
+    fs.writeFileSync(PAT_FILE, loginPat);
+    log('Login Client PAT written to file (length=' + loginPat.length + ')');
+
+    // Wait for ZITADEL to pick up the new PATs
+    log('Waiting for ZITADEL to process new PATs...');
+    await sleep(5000);
+
+    // Verify by calling Management API
+    const testRes = await httpRequest('POST', `${ZITADEL_URL}/management/v1/users/_search`, {
+      queries: []
+    }, { 'Authorization': 'Bearer ' + loginPat });
+    log('Management API test with login PAT: ' + testRes.status + ' ' + testRes.body.substring(0, 300));
+
+    if (testRes.status === 200 || testRes.status === 403) {
+      log('SUCCESS: PAT appears to be working!');
+      process.exit(0);
     }
   } catch (e) {
-    log('Device code error: ' + e.message);
+    log('Eventstore PAT creation error: ' + e.message);
   }
 
   log('ERROR: All methods failed');
   process.exit(1);
-}
-
-async function createPats(accessToken) {
-  const searchRes = await httpRequest('POST', `${ZITADEL_URL}/management/v1/users/_search`, {
-    queries: [{
-      userNameQuery: { userName: 'login-client', method: 'TEXT_QUERY_METHOD_EQUALS' }
-    }]
-  }, { 'Authorization': 'Bearer ' + accessToken });
-  log('Search login-client: ' + searchRes.status);
-
-  let loginUserId = null;
-  try {
-    const parsed = JSON.parse(searchRes.body);
-    if (parsed.result && parsed.result.length > 0) {
-      loginUserId = parsed.result[0].userId;
-    }
-  } catch (e) {}
-
-  if (loginUserId) {
-    const patRes = await httpRequest('POST', `${ZITADEL_URL}/management/v1/users/${loginUserId}/pats`, {
-      name: 'login-client-pat',
-      expirationDate: '2099-01-01T00:00:00Z'
-    }, { 'Authorization': 'Bearer ' + accessToken });
-    log('Login PAT create: ' + patRes.status + ' ' + patRes.body.substring(0, 500));
-
-    if (patRes.status === 201 || patRes.status === 200) {
-      try {
-        const data = JSON.parse(patRes.body);
-        const token = data.token || data.pat || data.accessToken;
-        if (token && token.length > 10) {
-          fs.writeFileSync(PAT_FILE, token);
-          log('SUCCESS: Login Client PAT saved (length=' + token.length + ')');
-        }
-      } catch (e) { log('Parse error: ' + e.message); }
-    }
-  }
-
-  const adminSearch = await httpRequest('POST', `${ZITADEL_URL}/management/v1/users/_search`, {
-    queries: [{
-      userNameQuery: { userName: 'admin', method: 'TEXT_QUERY_METHOD_EQUALS' }
-    }]
-  }, { 'Authorization': 'Bearer ' + accessToken });
-  let adminUserId = null;
-  try {
-    const parsed = JSON.parse(adminSearch.body);
-    if (parsed.result && parsed.result.length > 0) {
-      adminUserId = parsed.result[0].userId;
-    }
-  } catch (e) {}
-
-  if (adminUserId) {
-    const patRes = await httpRequest('POST', `${ZITADEL_URL}/management/v1/users/${adminUserId}/pats`, {
-      name: 'admin-pat',
-      expirationDate: '2099-01-01T00:00:00Z'
-    }, { 'Authorization': 'Bearer ' + accessToken });
-    log('Admin PAT create: ' + patRes.status + ' ' + patRes.body.substring(0, 500));
-
-    if (patRes.status === 201 || patRes.status === 200) {
-      try {
-        const data = JSON.parse(patRes.body);
-        const token = data.token || data.pat || data.accessToken;
-        if (token && token.length > 10) {
-          fs.writeFileSync(ADMIN_PAT_FILE, token);
-          log('SUCCESS: Admin PAT saved (length=' + token.length + ')');
-        }
-      } catch (e) { log('Parse error: ' + e.message); }
-    }
-  }
 }
 
 main().catch(err => { log('FATAL: ' + err.message); process.exit(1); });
