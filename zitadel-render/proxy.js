@@ -16,6 +16,8 @@ function log(msg) {
 function proxy(req, res, targetPort) {
   const headers = { ...req.headers };
   headers.host = 'zeroschool-zitadel.onrender.com';
+  if (!headers['x-forwarded-proto']) headers['x-forwarded-proto'] = 'https';
+  if (!headers['x-forwarded-for']) headers['x-forwarded-for'] = req.socket.remoteAddress;
   const opts = {
     hostname: '127.0.0.1',
     port: targetPort,
