@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bulk Upload Students - ZeroSchool</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .upload-area {
+      border: 2px dashed #4a5568;
+      border-radius: 12px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: rgba(255,255,255,0.03);
+    }
+    .upload-area:hover, .upload-area.dragover {
+      border-color: #667eea;
+      background: rgba(102,126,234,0.05);
+    }
+    .upload-area svg { margin-bottom: 12px; opacity: 0.6; }
+    .upload-area p { color: #a0aec0; margin: 4px 0; }
+    .upload-area .hint { font-size: 0.75rem; color: #718096; }
+    input[type="file"] { display: none; }
+    .btn-upload {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 16px;
+      transition: transform 0.2s;
+    }
+    .btn-upload:hover { transform: translateY(-1px); }
+    .btn-upload:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #2d3748;
+      border-radius: 3px;
+      margin-top: 16px;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-bar .fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 0.85rem;
+    }
+    .results-table th {
+      background: rgba(102,126,234,0.15);
+      padding: 8px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #e2e8f0;
+      border-bottom: 1px solid #4a5568;
+    }
+    .results-table td {
+      padding: 6px 12px;
+      border-bottom: 1px solid #2d3748;
+      color: #cbd5e0;
+    }
+    .results-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .status-success { color: #68d391; font-weight: 600; }
+    .status-failed { color: #fc8181; font-weight: 600; }
+    .summary-box {
+      display: flex;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .summary-card {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .summary-card .num { font-size: 2rem; font-weight: 700; }
+    .summary-card .label { font-size: 0.8rem; color: #a0aec0; margin-top: 4px; }
+    .download-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #48bb78, #38a169);
+      color: #fff;
+      padding: 10px 24px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      margin-top: 12px;
+      transition: transform 0.2s;
+    }
+    .download-btn:hover { transform: translateY(-1px); }
+    .template-link { color: #667eea; text-decoration: underline; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container" style="max-width: 900px;">
+    <div class="header">
+      <div class="logo">Z</div>
+      <h1>Bulk Upload Students</h1>
+      <p style="color: #a0aec0;">Upload an Excel or CSV file to create multiple student accounts at once</p>
+    </div>
+
+    <div class="card">
+      <div id="uploadSection">
+        <h3 style="margin-bottom: 8px; color: #e2e8f0;">Upload File</h3>
+        <p style="font-size: 0.85rem; color: #a0aec0; margin-bottom: 16px;">
+          Required columns: <strong>FirstName</strong>, <strong>Class</strong>, <strong>School</strong><br>
+          Optional: <strong>LastName</strong>, <strong>Phone</strong> (or Mobile)
+          <br><span class="template-link" onclick="downloadTemplate()">Download template Excel</span>
+        </p>
+
+        <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p style="font-size: 1.1rem; color: #e2e8f0;">Drop file here or click to browse</p>
+          <p class="hint">Supports .xlsx, .xls, .csv</p>
+          <p id="fileName" style="color: #667eea; margin-top: 8px; font-weight: 600;"></p>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+
+        <div style="text-align: center;">
+          <button class="btn-upload" id="uploadBtn" disabled onclick="uploadFile()">Upload & Create Accounts</button>
+        </div>
+
+        <div class="progress-bar" id="progressBar">
+          <div class="fill" id="progressFill"></div>
+        </div>
+        <p id="statusText" style="text-align: center; margin-top: 8px; color: #a0aec0; display: none;"></p>
+      </div>
+
+      <div id="resultsSection" style="display: none;">
+        <div class="summary-box">
+          <div class="summary-card">
+            <div class="num" id="totalCount" style="color: #667eea;">0</div>
+            <div class="label">Total Rows</div>
+          </div>
+          <div class="summary-card">
+            <div class="num" id="successCount" style="color: #68d391;">0</div>
+            <div class="label">Created</div>
+          </div>
+          <div class="summary-card">
+            <div class="num" id="failedCount" style="color: #fc8181;">0</div>
+            <div class="label">Failed</div>
+          </div>
+        </div>
+
+        <div style="text-align: center; margin-bottom: 16px;">
+          <a id="downloadLink" class="download-btn" href="#">Download Credentials Excel</a>
+        </div>
+
+        <div style="max-height: 400px; overflow-y: auto;">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Class</th>
+                <th>School</th>
+                <th>Email</th>
+                <th>Password</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+
+        <div style="text-align: center; margin-top: 16px;">
+          <button class="btn" onclick="resetForm()">Upload Another File</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 16px;">
+      <a href="/dashboard" style="color: #667eea; text-decoration: none;">Back to Dashboard</a>
+    </div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadBtn = document.getElementById('uploadBtn');
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; onFileSelected(); }
+    });
+    fileInput.addEventListener('change', onFileSelected);
+
+    function onFileSelected() {
+      if (fileInput.files.length) {
+        document.getElementById('fileName').textContent = fileInput.files[0].name;
+        uploadBtn.disabled = false;
+      }
+    }
+
+    async function uploadFile() {
+      if (!fileInput.files.length) return;
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+
+      uploadBtn.disabled = true;
+      document.getElementById('progressBar').style.display = 'block';
+      document.getElementById('statusText').style.display = 'block';
+      document.getElementById('statusText').textContent = 'Uploading and creating accounts...';
+      document.getElementById('progressFill').style.width = '50%';
+
+      try {
+        const resp = await fetch('/api/bulk-upload', { method: 'POST', body: formData });
+        const data = await resp.json();
+        document.getElementById('progressFill').style.width = '100%';
+
+        if (data.error) {
+          document.getElementById('statusText').textContent = 'Error: ' + data.error;
+          uploadBtn.disabled = false;
+          return;
+        }
+
+        document.getElementById('uploadSection').style.display = 'none';
+        document.getElementById('resultsSection').style.display = 'block';
+        document.getElementById('totalCount').textContent = data.total;
+        document.getElementById('successCount').textContent = data.created;
+        document.getElementById('failedCount').textContent = data.failed;
+        document.getElementById('downloadLink').href = data.downloadUrl;
+
+        const tbody = document.getElementById('resultsBody');
+        tbody.innerHTML = '';
+        for (const r of data.results) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${r.firstName || ''} ${r.lastName || ''}</td>
+            <td>${r.className || ''}</td>
+            <td>${r.schoolId || ''}</td>
+            <td>${r.email || '-'}</td>
+            <td>${r.password || '-'}</td>
+            <td class="${r.status === 'SUCCESS' ? 'status-success' : 'status-failed'}">${r.status}${r.error ? ' (' + r.error + ')' : ''}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+      } catch (err) {
+        document.getElementById('statusText').textContent = 'Upload failed: ' + err.message;
+        uploadBtn.disabled = false;
+      }
+    }
+
+    function resetForm() {
+      document.getElementById('uploadSection').style.display = 'block';
+      document.getElementById('resultsSection').style.display = 'none';
+      document.getElementById('progressBar').style.display = 'none';
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('statusText').style.display = 'none';
+      document.getElementById('fileName').textContent = '';
+      fileInput.value = '';
+      uploadBtn.disabled = true;
+    }
+
+    function downloadTemplate() {
+      const rows = [
+        { FirstName: 'Aarav', LastName: 'Patel', Class: '7', School: 'sch001', Phone: '915555555555' },
+        { FirstName: 'Priya', LastName: 'Sharma', Class: '10', School: 'sch003', Phone: '916666666666' },
+        { FirstName: 'Rahul', LastName: 'Gupta', Class: '5', School: 'sch002', Phone: '' }
+      ];
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Students');
+      XLSX.writeFile(wb, 'ZeroSchool-Upload-Template.xlsx');
+    }
+  </script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+</body>
+</html>

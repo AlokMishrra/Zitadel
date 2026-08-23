@@ -1,0 +1,79 @@
+services:
+  - type: web
+    name: zitadel
+    runtime: image
+    image:
+      url: ghcr.io/school-zeroschool/zitadel:latest
+    startCommand: start-from-init --masterkey "$ZITADEL_MASTERKEY" --tlsMode external --steps /init-steps.yaml
+    envVars:
+      - key: ZITADEL_MASTERKEY
+        value: jYCXFt5umAbioo2b9IBT6YjyamC8PvyM
+      - key: ZITADEL_DATABASE_POSTGRES_HOST
+        fromDatabase:
+          name: zitadel-db
+          property: host
+      - key: ZITADEL_DATABASE_POSTGRES_PORT
+        fromDatabase:
+          name: zitadel-db
+          property: port
+      - key: ZITADEL_DATABASE_POSTGRES_DATABASE
+        fromDatabase:
+          name: zitadel-db
+          property: database
+      - key: ZITADEL_DATABASE_POSTGRES_USER
+        fromDatabase:
+          name: zitadel-db
+          property: user
+      - key: ZITADEL_DATABASE_POSTGRES_PASSWORD
+        fromDatabase:
+          name: zitadel-db
+          property: password
+      - key: ZITADEL_DATABASE_POSTGRES_SSL_MODE
+        value: disable
+      - key: ZITADEL_EXTERNALSECURE
+        value: "true"
+      - key: ZITADEL_EXTERNALDOMAIN
+        sync: false
+      - key: ZITADEL_EXTERNALPORT
+        value: "443"
+      - key: ZITADEL_PUBLIC_SCHEME
+        value: https
+      - key: ZITADEL_PORT
+        value: "10000"
+      - key: GOMAXPROCS
+        value: "1"
+      - key: GOMEMLIMIT
+        value: "400MiB"
+    healthCheckPath: /debug/healthz
+    plan: free
+    region: oregon
+
+  - type: web
+    name: custom-ui
+    runtime: image
+    image:
+      url: ghcr.io/school-zeroschool/zitadel-custom-ui:latest
+    envVars:
+      - key: ZITADEL_EXTERNAL_ISSUER
+        fromService:
+          name: zitadel
+          property: url
+      - key: ZITADEL_MANAGEMENT_URL
+        fromService:
+          name: zitadel
+          property: url
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: OIDC_CLIENT_ID
+        value: "387166122471849987"
+      - key: ZITADEL_PAT
+        sync: false
+    plan: free
+    region: oregon
+
+  - type: pgsql
+    name: zitadel-db
+    plan: free
+    region: oregon
+    databaseName: zitadel
+    user: zitadel

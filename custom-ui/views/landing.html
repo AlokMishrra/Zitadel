@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZeroSchool</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo-text"><span>ZeroSchool</span></div>
+      <h1>Welcome</h1>
+      <p class="subtitle">Choose your portal to continue</p>
+      <div class="role-grid">
+        <a href="http://student.zeroschool.org:3001/login" class="role-card">
+          <span class="icon">&#127891;</span>
+          <span class="label">Student Portal</span>
+        </a>
+        <a href="http://teacher.zeroschool.org:3001/login" class="role-card">
+          <span class="icon">&#128104;&#8205;&#127979;</span>
+          <span class="label">Teacher Portal</span>
+        </a>
+      </div>
+      <div class="divider"><span>direct access</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <a href="/login" class="btn btn-primary" style="text-align:center;text-decoration:none;font-size:13px;padding:10px;">Student (localhost)</a>
+        <a href="/login" class="btn btn-primary" style="text-align:center;text-decoration:none;font-size:13px;padding:10px;">Teacher (localhost)</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

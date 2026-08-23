@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Registration - ZeroSchool</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo-text"><span>ZeroSchool</span></div>
+      <h1>Student Registration</h1>
+      <p class="subtitle">Fill in your details — your email will be auto-generated</p>
+      <div class="step-indicator">
+        <div class="step-dot active"></div>
+        <div class="step-dot"></div>
+      </div>
+      <div id="error" class="alert alert-error" style="display:none"></div>
+      <form onsubmit="return false;">
+        <div class="form-row">
+          <div class="form-group">
+            <label>First Name</label>
+            <input type="text" id="firstName" placeholder="e.g. Priya" required>
+          </div>
+          <div class="form-group">
+            <label>Last Name</label>
+            <input type="text" id="lastName" placeholder="e.g. Sharma">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="tel" id="phone" placeholder="+91 XXXXXXXXXX" required>
+        </div>
+        <div class="form-group">
+          <label>School</label>
+          <select id="schoolId" required>
+            <option value="">Select school</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Class</label>
+          <select id="className" required>
+            <option value="">Select class</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" onclick="goStep2()">Next</button>
+      </form>
+    </div>
+  </div>
+  <script>
+    async function loadOptions() {
+      const [schools, classes] = await Promise.all([
+        fetch('/api/schools').then(r => r.json()),
+        fetch('/api/classes').then(r => r.json())
+      ]);
+      const ss = document.getElementById('schoolId');
+      schools.forEach(s => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; ss.appendChild(o); });
+      const cs = document.getElementById('className');
+      classes.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = 'Class ' + c; cs.appendChild(o); });
+    }
+    loadOptions();
+
+    function goStep2() {
+      const f = document.getElementById('firstName').value.trim();
+      const l = document.getElementById('lastName').value.trim();
+      const p = document.getElementById('phone').value.trim();
+      const s = document.getElementById('schoolId').value;
+      const c = document.getElementById('className').value;
+      if (!f || !p || !s || !c) {
+        const e = document.getElementById('error');
+        e.textContent = 'Please fill all required fields';
+        e.style.display = 'block';
+        return;
+      }
+      const params = new URLSearchParams({ firstName: f, className: c, schoolId: s, phone: p });
+      if (l) params.set('lastName', l);
+      window.location.href = '/register/step2?' + params.toString();
+    }
+  </script>
+</body>
+</html>

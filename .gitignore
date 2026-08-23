@@ -1,0 +1,12 @@
+.env*
+*.pat
+*.json
+!package.json
+!render.yaml
+test-*.csv
+test-*.json
+*.xml
+*.sh
+init-steps-local.yaml
+docker-compose.yml
+!docker-compose.local.yml

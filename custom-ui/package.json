@@ -1,0 +1,16 @@
+{
+  "name": "zeroschool-custom-ui",
+  "version": "3.0.0",
+  "description": "ZeroSchool custom login/registration UI for ZITADEL",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.18.0",
+    "axios": "^1.6.0",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5"
+  }
+}

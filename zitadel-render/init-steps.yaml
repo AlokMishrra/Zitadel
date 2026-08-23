@@ -1,0 +1,31 @@
+FirstInstance:
+  InstanceName: ZeroSchool
+  DefaultLanguage: en
+  Org:
+    Name: ZeroSchool
+    Human:
+      UserName: school@zeroschool.localhost
+      FirstName: Swastik
+      LastName: Patil
+      Email:
+        Address: school@zeroschool.org
+        Verified: true
+      Password: Zeroschool@123
+      PasswordChangeRequired: false
+    Machine:
+      Machine:
+        Username: admin
+        Name: Admin Machine User
+      MachineKey:
+        Type: 1
+      Pat:
+        ExpirationDate: "2099-01-01T00:00:00Z"
+    LoginClient:
+      Machine:
+        Username: login-client
+        Name: Login Client
+      Pat:
+        ExpirationDate: "2099-01-01T00:00:00Z"
+  MachineKeyPath: /tmp/machine-key.json
+  PatPath: /tmp/admin.pat
+  LoginClientPatPath: /tmp/login-client.pat

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In - ZeroSchool</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo-text"><span>ZeroSchool</span></div>
+      <h1>Welcome Back!</h1>
+      <p class="subtitle">Enter your password to sign in</p>
+
+      <div id="error" class="alert alert-error" style="display:none"></div>
+
+      <div class="email-preview">
+        <div class="label">Your Email</div>
+        <div class="email" id="displayEmail">-</div>
+      </div>
+
+      <form onsubmit="return false;">
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="Enter your password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="loginBtn" onclick="doLogin()">Sign In</button>
+      </form>
+      <div class="back-link"><a href="/">Register Another Account</a></div>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const email = params.get('email') || '-';
+    const role = params.get('role') || 'student';
+    document.getElementById('displayEmail').textContent = email;
+
+    async function doLogin() {
+      const err = document.getElementById('error');
+      err.style.display = 'none';
+      const btn = document.getElementById('loginBtn');
+      const password = document.getElementById('password').value;
+      if (!password) { err.textContent = 'Please enter your password'; err.style.display = 'block'; return; }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Signing in...';
+
+      try {
+        const resp = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ loginName: email.split('@')[0], password: password })
+        });
+        const data = await resp.json();
+        if (data.success) {
+          window.location.href = data.redirect || '/dashboard';
+        } else {
+          err.textContent = data.error || 'Login failed';
+          err.style.display = 'block';
+        }
+      } catch (e) {
+        err.textContent = 'Network error. Please try again.';
+        err.style.display = 'block';
+      }
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
+
+    document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  </script>
+</body>
+</html>

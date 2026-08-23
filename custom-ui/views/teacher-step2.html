@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Registration - Step 2 - ZeroSchool</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo-text"><span>ZeroSchool</span></div>
+      <h1>Create Account</h1>
+      <p class="subtitle">Set your password to finish registration</p>
+      <div class="step-indicator">
+        <div class="step-dot done"></div>
+        <div class="step-dot active"></div>
+      </div>
+
+      <div id="error" class="alert alert-error" style="display:none"></div>
+
+      <div class="email-preview">
+        <div class="label">Your Email ID</div>
+        <div class="email" id="generatedEmail">Loading...</div>
+      </div>
+
+      <form id="step2Form" onsubmit="return false;">
+        <input type="hidden" id="firstName">
+        <input type="hidden" id="lastName">
+        <input type="hidden" id="phone">
+        <input type="hidden" id="schoolId">
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="Enter password" required minlength="8">
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <input type="password" id="confirmPassword" placeholder="Confirm password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="submitBtn" onclick="register()">Create Account</button>
+      </form>
+      <div class="back-link"><a href="/register/teacher">← Back</a></div>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const firstName = params.get('firstName') || '';
+    const lastName = params.get('lastName') || '';
+    const phone = params.get('phone') || '';
+    const schoolId = params.get('schoolId') || '';
+
+    document.getElementById('firstName').value = firstName;
+    document.getElementById('lastName').value = lastName;
+    document.getElementById('phone').value = phone;
+    document.getElementById('schoolId').value = schoolId;
+
+    (async () => {
+      const resp = await fetch(`/api/generate-email?firstName=${encodeURIComponent(firstName)}&lastName=${encodeURIComponent(lastName)}&schoolId=${encodeURIComponent(schoolId)}&role=teacher`);
+      const data = await resp.json();
+      document.getElementById('generatedEmail').textContent = data.email || 'Error generating email';
+    })();
+
+    async function register() {
+      const err = document.getElementById('error');
+      err.style.display = 'none';
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+
+      if (password.length < 8) {
+        err.textContent = 'Password must be at least 8 characters';
+        err.style.display = 'block';
+        return;
+      }
+      if (password !== confirmPassword) {
+        err.textContent = 'Passwords do not match';
+        err.style.display = 'block';
+        return;
+      }
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Creating account...';
+
+      try {
+        const resp = await fetch('/api/register/teacher', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firstName, lastName, phone, schoolId, password, role: 'teacher' })
+        });
+        const data = await resp.json();
+        if (data.success) {
+          window.location.href = `/success?email=${encodeURIComponent(data.email)}&role=teacher`;
+        } else {
+          err.textContent = data.error || 'Registration failed';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Create Account';
+        }
+      } catch (e) {
+        err.textContent = 'Network error. Please try again.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
+      }
+    }
+  </script>
+</body>
+</html>

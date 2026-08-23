@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: zitadel
+    runtime: image
+    image:
+      url: ghcr.io/zitadel/zitadel:v2.64.0
+    startCommand: start-from-init --masterkey "$ZITADEL_MASTERKEY"
+    envVars:
+      - key: ZITADEL_MASTERKEY
+        value: jYCXFt5umAbioo2b9IBT6YjyamC8PvyM
+      - key: ZITADEL_DATABASE_POSTGRES_DSN
+        fromDatabase:
+          name: zitadel-db
+          property: connectionString
+      - key: ZITADEL_EXTERNALDOMAIN
+        sync: false
+      - key: ZITADEL_EXTERNALPORT
+        value: "443"
+      - key: ZITADEL_EXTERNALSECURE
+        value: "true"
+      - key: ZITADEL_PUBLIC_SCHEME
+        value: https
+      - key: ZITADEL_FIRSTINSTANCE_ORG_NAME
+        value: ZeroSchool
+      - key: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME
+        value: school@zeroschool.org
+      - key: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS
+        value: school@zeroschool.org
+      - key: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME
+        value: Swastik
+      - key: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME
+        value: Patil
+      - key: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD
+        value: Zeroschool@123
+      - key: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED
+        value: "true"
+      - key: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED
+        value: "false"
+      - key: ZITADEL_PORT
+        value: "10000"
+      - key: GOMAXPROCS
+        value: "1"
+      - key: GOMEMLIMIT
+        value: "400MiB"
+    healthCheckPath: /debug/healthz
+    plan: free
+    region: oregon
+
+  - type: pgsql
+    name: zitadel-db
+    plan: free
+    region: oregon
+    databaseName: zitadel
+    user: zitadel

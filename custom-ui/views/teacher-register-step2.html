@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Account - ZeroSchool</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo-text"><span>ZeroSchool</span></div>
+      <h1>Create Account</h1>
+      <p class="subtitle">Set your password to finish registration</p>
+      <div class="step-indicator">
+        <div class="step-dot done"></div>
+        <div class="step-dot active"></div>
+      </div>
+      <div id="error" class="alert alert-error" style="display:none"></div>
+      <div class="email-preview">
+        <div class="label">Your Auto-Generated Email</div>
+        <div class="email" id="generatedEmail">Generating...</div>
+      </div>
+      <form onsubmit="return false;">
+        <input type="hidden" id="firstName">
+        <input type="hidden" id="lastName">
+        <input type="hidden" id="phone">
+        <input type="hidden" id="schoolId">
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="Min 8 characters" required minlength="8">
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <input type="password" id="confirmPassword" placeholder="Confirm password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="submitBtn" onclick="register()">Create Account & Sign In</button>
+      </form>
+      <div class="back-link"><a href="/register">Back to details</a></div>
+    </div>
+  </div>
+  <script>
+    const p = new URLSearchParams(window.location.search);
+    ['firstName','lastName','phone','schoolId'].forEach(k => {
+      document.getElementById(k).value = p.get(k) || '';
+    });
+
+    (async () => {
+      try {
+        const r = await fetch(`/api/generate-email?firstName=${encodeURIComponent(p.get('firstName'))}&lastName=${encodeURIComponent(p.get('lastName'))}&schoolId=${encodeURIComponent(p.get('schoolId'))}`);
+        const d = await r.json();
+        document.getElementById('generatedEmail').textContent = d.email || 'Error generating email';
+      } catch (e) {
+        document.getElementById('generatedEmail').textContent = 'Error generating email';
+      }
+    })();
+
+    async function register() {
+      const err = document.getElementById('error');
+      err.style.display = 'none';
+      const pw = document.getElementById('password').value;
+      const cpw = document.getElementById('confirmPassword').value;
+      if (pw.length < 8) { err.textContent = 'Password must be at least 8 characters'; err.style.display = 'block'; return; }
+      if (pw !== cpw) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Creating account...';
+
+      try {
+        const r = await fetch('/api/register/teacher', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firstName: p.get('firstName'),
+            lastName: p.get('lastName'),
+            phone: p.get('phone'),
+            schoolId: p.get('schoolId'),
+            password: pw
+          })
+        });
+        const d = await r.json();
+        if (d.success) {
+          window.location.href = '/dashboard';
+        } else {
+          err.textContent = d.error || 'Registration failed';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Create Account & Sign In';
+        }
+      } catch (e) {
+        err.textContent = 'Network error. Please try again.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Create Account & Sign In';
+      }
+    }
+  </script>
+</body>
+</html>
