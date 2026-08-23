@@ -23,11 +23,3 @@ Database:
       Password: 'XaZKXwTcIiCchiEi317FvD30faT7m4vd'
       SSL:
         Mode: 'disable'
-
-Port: 8081
-
-DefaultInstance:
-  Features:
-    LoginV2:
-      Required: true
-      BaseURI: 'https://zeroschool-zitadel.onrender.com/ui/v2/login'

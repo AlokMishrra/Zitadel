@@ -6,7 +6,13 @@ nginx &
 NGINX_PID=$!
 
 echo "Starting ZITADEL on internal port 8081..."
-PORT=8081 /app/zitadel start-from-init \
+PORT=8081 \
+ZITADEL_OIDC_DEFAULTLOGINURLV2="https://zeroschool-zitadel.onrender.com/ui/v2/login/login?authRequest=" \
+ZITADEL_OIDC_DEFAULTLOGOUTURLV2="https://zeroschool-zitadel.onrender.com/ui/v2/login/logout?post_logout_redirect=" \
+ZITADEL_SAML_DEFAULTLOGINURLV2="https://zeroschool-zitadel.onrender.com/ui/v2/login/login?samlRequest=" \
+ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED=true \
+ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI="https://zeroschool-zitadel.onrender.com/ui/v2/login" \
+/app/zitadel start-from-init \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
   --tlsMode external \
   --config /config.yaml \
@@ -27,30 +33,38 @@ for i in $(seq 1 90); do
 done
 
 echo "Waiting for login-client PAT file..."
+LOGIN_PAT=""
 for i in $(seq 1 30); do
   if [ -f /tmp/login-client.pat ]; then
-    echo "Login-client PAT found!"
+    LOGIN_PAT=$(cat /tmp/login-client.pat)
+    echo "Login-client PAT loaded ($(echo -n "$LOGIN_PAT" | wc -c) bytes)"
     break
   fi
   sleep 1
 done
 
-export ZITADEL_LOGIN_PAT=""
-if [ -f /tmp/login-client.pat ]; then
-  ZITADEL_LOGIN_PAT=$(cat /tmp/login-client.pat)
-  echo "Login-client PAT loaded"
-else
-  echo "WARNING: login-client PAT not found, trying admin PAT..."
+if [ -z "$LOGIN_PAT" ]; then
+  echo "WARNING: login-client PAT not found at /tmp/login-client.pat"
+  echo "Trying admin PAT..."
   if [ -f /tmp/admin.pat ]; then
-    ZITADEL_LOGIN_PAT=$(cat /tmp/admin.pat)
+    LOGIN_PAT=$(cat /tmp/admin.pat)
     echo "Admin PAT loaded"
+  else
+    echo "ERROR: No PAT found. Login UI will not work."
   fi
 fi
 
 echo "Starting Login UI on port 3000..."
-ZITADEL_LOGIN_PAT="$ZITADEL_LOGIN_PAT" /app/zitadel-login \
-  --port 3000 \
-  --zitadel http://localhost:8081 &
+cd /login-app
+PORT=3000 \
+NODE_ENV=production \
+NODE_OPTIONS="--use-openssl-ca --require /login-app/load-ssl-cert-dir.cjs" \
+ZITADEL_TLS_ENABLED=false \
+ZITADEL_API_URL="http://localhost:8081" \
+NEXT_PUBLIC_BASE_PATH="/ui/v2/login" \
+ZITADEL_SERVICE_USER_TOKEN="$LOGIN_PAT" \
+CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
+node apps/login/server.js &
 LOGIN_PID=$!
 
 echo "All services started. Waiting..."
