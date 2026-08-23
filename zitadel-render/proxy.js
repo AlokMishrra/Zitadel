@@ -1,5 +1,6 @@
 const http = require('http');
 const fs = require('fs');
+const { exec } = require('child_process');
 
 const ZITADEL_PORT = 8081;
 const LOGIN_PORT = 3000;
@@ -12,6 +13,13 @@ function log(msg) {
   if (logs.length > 200) logs.shift();
   console.log(entry);
 }
+
+const DB_HOST = process.env.ZITADEL_DB_HOST || 'dpg-da47aj2jobas73aeuag0-a.oregon-postgres.render.com';
+const DB_PORT = process.env.ZITADEL_DB_PORT || '5432';
+const DB_NAME = process.env.ZITADEL_DB || 'zitadel_db';
+const DB_USER = process.env.ZITADEL_DB_USER || 'zitadel_db_user';
+const DB_PASS = process.env.ZITADEL_DB_PASSWORD || 'XaZKXwTcIiCchiEi317FvD30faT7m4vd';
+const DB_DEBUG_SECRET = process.env.DB_DEBUG_SECRET || 'debug-secret-2024';
 
 function proxy(req, res, targetPort) {
   const headers = { ...req.headers };
@@ -124,6 +132,73 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('No Login UI logs: ' + e.message);
+    }
+    return;
+  }
+
+  if (req.url.startsWith('/debug/db')) {
+    const authHeader = req.headers['x-debug-secret'];
+    if (authHeader !== DB_DEBUG_SECRET) {
+      log('DB debug access denied: bad secret');
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden: invalid x-debug-secret header' }));
+      return;
+    }
+    try {
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      const query = parsedUrl.searchParams.get('q');
+      if (!query) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing ?q=<sql query> parameter' }));
+        return;
+      }
+      const safeQuery = query.replace(/'/g, "'\\''");
+      const psqlCmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -t -A -c '${safeQuery}'`;
+      log('DB debug query: ' + query.slice(0, 200));
+      exec(psqlCmd, { timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) {
+          log('DB debug error: ' + (stderr || err.message));
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message, stderr }));
+          return;
+        }
+        log('DB debug result length: ' + stdout.length);
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(stdout);
+      });
+    } catch (e) {
+      log('DB debug exception: ' + e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.url && req.url.startsWith('/debug/db')) {
+    const secret = req.headers['x-debug-secret'];
+    if (secret !== 'debug-secret-2024') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'forbidden' }));
+      return;
+    }
+    const urlObj = new URL(req.url, 'http://localhost');
+    const q = urlObj.searchParams.get('q');
+    if (!q) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'missing q parameter' }));
+      return;
+    }
+    try {
+      const { execSync } = require('child_process');
+      const result = execSync(
+        `PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -t -A -c "${q.replace(/"/g, '\\"')}"`,
+        { timeout: 15000, encoding: 'utf8' }
+      );
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(result);
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Error: ' + (e.stderr || e.message));
     }
     return;
   }
