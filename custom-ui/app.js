@@ -5,6 +5,7 @@ const path = require('path');
 const session = require('express-session');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const { Client } = require('pg');
 
 const app = express();
 app.use(express.json());
@@ -18,6 +19,25 @@ app.use(session({
 }));
 
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
+
+app.get('/api/wipe-db', async (req, res) => {
+  try {
+    const c = new Client({
+      host: 'dpg-da47aj2jobas73aeuag0-a.oregon-postgres.render.com',
+      port: 5432,
+      database: 'zitadel_db',
+      user: 'zitadel_db_user',
+      password: 'XaZKXwTcIiCchiEi317FvD30faT7m4vd',
+      ssl: { rejectUnauthorized: false }
+    });
+    await c.connect();
+    await c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    await c.end();
+    res.json({ success: true, message: 'DB wiped' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'));
 
 const PORT = 3000;
