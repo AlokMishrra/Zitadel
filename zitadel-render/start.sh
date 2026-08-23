@@ -18,6 +18,8 @@ sleep 2
 
 dbg "[3/4] Starting ZITADEL on port 8081..."
 ZITADEL_PORT=8081 \
+ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED=true \
+ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI=https://zeroschool-zitadel.onrender.com/ui/v2/login \
 ZITADEL_FIRSTINSTANCE_INSTANCENAME=ZeroSchool \
 ZITADEL_FIRSTINSTANCE_ORG_NAME=ZeroSchool \
 ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME=school@zeroschool.localhost \
@@ -98,7 +100,8 @@ fi
 ZITADEL_API_URL="http://localhost:8081" \
 ZITADEL_SERVICE_USER_TOKEN="$PAT_CONTENT" \
 ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
-CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
+NEXT_PUBLIC_BASE_PATH=/ui/v2/login \
+CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com" \
 HOSTNAME=0.0.0.0 \
 PORT=3000 \
 node apps/login/server.js > /tmp/login-ui-debug.log 2>&1 &
@@ -135,7 +138,8 @@ while true; do
     ZITADEL_API_URL="http://localhost:8081" \
     ZITADEL_SERVICE_USER_TOKEN="$PAT_CONTENT" \
     ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
-    CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
+    NEXT_PUBLIC_BASE_PATH=/ui/v2/login \
+    CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com" \
     HOSTNAME=0.0.0.0 \
     PORT=3000 \
     node apps/login/server.js > /tmp/login-ui-debug.log 2>&1 &
@@ -153,7 +157,8 @@ while true; do
         ZITADEL_API_URL="http://localhost:8081" \
         ZITADEL_SERVICE_USER_TOKEN="$PAT_VAL" \
         ZITADEL_SERVICE_USER_TOKEN_FILE=/tmp/login-client.pat \
-        CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com,X-Forwarded-Proto:https" \
+        NEXT_PUBLIC_BASE_PATH=/ui/v2/login \
+        CUSTOM_REQUEST_HEADERS="Host:zeroschool-zitadel.onrender.com" \
         HOSTNAME=0.0.0.0 \
         PORT=3000 \
         node apps/login/server.js > /tmp/login-ui-debug.log 2>&1 &

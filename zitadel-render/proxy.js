@@ -20,12 +20,24 @@ const DB_NAME = process.env.ZITADEL_DB || 'zitadel_db';
 const DB_USER = process.env.ZITADEL_DB_USER || 'zitadel_db_user';
 const DB_PASS = process.env.ZITADEL_DB_PASSWORD || 'XaZKXwTcIiCchiEi317FvD30faT7m4vd';
 const DB_DEBUG_SECRET = process.env.DB_DEBUG_SECRET || 'debug-secret-2024';
+const EXTERNAL_ORIGIN = process.env.EXTERNAL_ORIGIN || 'https://zeroschool-zitadel.onrender.com';
+
+function setCorsHeaders(res, req) {
+  const origin = req.headers.origin || EXTERNAL_ORIGIN;
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Forwarded-For, X-Forwarded-Proto, Host, Origin, Accept, Cookie, X-Requested-With, X-CSRF-Token');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
 
 function proxy(req, res, targetPort) {
   const headers = { ...req.headers };
   headers.host = 'zeroschool-zitadel.onrender.com';
+  headers.connection = 'close';
   if (!headers['x-forwarded-proto']) headers['x-forwarded-proto'] = 'https';
   if (!headers['x-forwarded-for']) headers['x-forwarded-for'] = req.socket.remoteAddress;
+  delete headers['accept-encoding'];
   const opts = {
     hostname: '127.0.0.1',
     port: targetPort,
@@ -35,7 +47,10 @@ function proxy(req, res, targetPort) {
     timeout: 30000,
   };
   const proxyReq = http.request(opts, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    const resHeaders = { ...proxyRes.headers };
+    setCorsHeaders({ setHeader: (k, v) => { resHeaders[k] = v; } }, req);
+    delete resHeaders['x-frame-options'];
+    res.writeHead(proxyRes.statusCode, resHeaders);
     proxyRes.pipe(res);
   });
   proxyReq.on('error', (e) => {
@@ -76,6 +91,13 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    setCorsHeaders(res, req);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   if (req.url === '/debug/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
