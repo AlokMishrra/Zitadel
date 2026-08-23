@@ -90,6 +90,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Start.sh debug info
+  if (req.url === '/debug/startup') {
+    try {
+      const out = fs.readFileSync('/tmp/startup-debug.log', 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(out.slice(-5000));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('No startup debug logs: ' + e.message);
+    }
+    return;
+  }
+
   const isLoginPath = req.url.startsWith('/ui/v2/login');
 
   if (isLoginPath) {

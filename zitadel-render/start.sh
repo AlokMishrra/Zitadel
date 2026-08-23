@@ -1,125 +1,130 @@
 #!/bin/bash
-set -e
 
-echo "=== Starting ZITADEL + Login UI + Node.js Proxy ==="
+dbg() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> /tmp/startup-debug.log; }
+: > /tmp/startup-debug.log
+
+dbg "=== Starting ZITADEL + Login UI + Node.js Proxy ==="
 
 # Start the Node.js reverse proxy on port 8080
-echo "[1/4] Starting Node.js proxy on port 8080..."
+dbg "[1/4] Starting Node.js proxy on port 8080..."
 node /proxy.js &
 PROXY_PID=$!
-echo "Proxy PID: $PROXY_PID"
+dbg "Proxy PID: $PROXY_PID"
 sleep 1
 
 # Start ZITADEL on port 8081
-echo "[2/4] Starting ZITADEL on port 8081..."
+dbg "[2/4] Starting ZITADEL on port 8081..."
 ZITADEL_PORT=8081 /app/zitadel start-from-init \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
   --tlsMode external \
   --steps /init-steps.yaml > /tmp/zitadel-stdout.log 2>&1 &
 ZITADEL_PID=$!
-echo "ZITADEL PID: $ZITADEL_PID"
+dbg "ZITADEL PID: $ZITADEL_PID"
 
 # Wait for ZITADEL health
-echo "[3/4] Waiting for ZITADEL to be healthy..."
+dbg "[3/4] Waiting for ZITADEL to be healthy..."
 ZITADEL_READY=false
 for i in $(seq 1 90); do
   if curl -sf http://localhost:8081/debug/healthz > /dev/null 2>&1; then
-    echo "ZITADEL ready after ${i}x2s"
+    dbg "ZITADEL ready after ${i}x2s"
     ZITADEL_READY=true
     break
   fi
   if ! kill -0 $ZITADEL_PID 2>/dev/null; then
-    echo "ERROR: ZITADEL process died during startup, will retry"
-    # Don't exit - the monitor loop will restart it
+    dbg "ERROR: ZITADEL process died during startup"
   fi
   sleep 2
 done
 if [ "$ZITADEL_READY" = false ]; then
-  echo "WARNING: ZITADEL did not become healthy in time, continuing anyway"
+  dbg "WARNING: ZITADEL did not become healthy in time"
 fi
 
 # Wait for PAT files
-echo "[4/4] Waiting for PAT files..."
+dbg "[4/4] Waiting for PAT files..."
 LOGIN_PAT=""
 for i in $(seq 1 60); do
   if [ -f /tmp/login-client.pat ]; then
     LOGIN_PAT=$(cat /tmp/login-client.pat)
-    echo "login-client PAT loaded ($(echo -n "$LOGIN_PAT" | wc -c) bytes)"
+    dbg "login-client PAT loaded ($(echo -n "$LOGIN_PAT" | wc -c) bytes)"
     break
   fi
   if [ -f /tmp/admin.pat ]; then
     LOGIN_PAT=$(cat /tmp/admin.pat)
-    echo "admin PAT loaded ($(echo -n "$LOGIN_PAT" | wc -c) bytes)"
+    dbg "admin PAT loaded ($(echo -n "$LOGIN_PAT" | wc -c) bytes)"
     break
-  fi
-  if [ $i -eq 60 ]; then
-    echo "WARNING: No PAT file found after 120s"
   fi
   sleep 2
 done
+if [ -z "$LOGIN_PAT" ]; then
+  dbg "WARNING: No PAT file found after 120s"
+fi
 
-# Start Login UI
-echo "Starting Login UI on port 3000..."
+# Debug: list login-app structure
+dbg "Login app directory:"
+ls -la /login-app/ >> /tmp/startup-debug.log 2>&1
+ls -la /login-app/apps/login/ >> /tmp/startup-debug.log 2>&1
+ls -la /login-app/.next/ >> /tmp/startup-debug.log 2>&1
+ls -la /login-app/apps/login/.next/ >> /tmp/startup-debug.log 2>&1
+cat /login-app/apps/login/package.json >> /tmp/startup-debug.log 2>&1
+
+# Start Login UI - try without NODE_ENV=production first
+dbg "Starting Login UI on port 3000..."
 cd /login-app
 export ZITADEL_SERVICE_USER_TOKEN="$LOGIN_PAT"
 export ZITADEL_API_URL="http://localhost:8081"
 export NEXT_PUBLIC_BASE_PATH="/ui/v2/login"
 export ZITADEL_TLS_ENABLED="false"
 export PORT="3000"
-export NODE_ENV="production"
-echo "LOGIN_PAT length: $(echo -n "$LOGIN_PAT" | wc -c)"
-echo "ZITADEL_SERVICE_USER_TOKEN length: $(echo -n "$ZITADEL_SERVICE_USER_TOKEN" | wc -c)"
-ls -la /login-app/apps/login/server.js || echo "WARN: server.js not found"
-node --trace-warnings apps/login/server.js > /tmp/login-stdout.log 2>&1 &
+dbg "LOGIN_PAT length: $(echo -n "$LOGIN_PAT" | wc -c)"
+dbg "ZITADEL_SERVICE_USER_TOKEN length: $(echo -n "$ZITADEL_SERVICE_USER_TOKEN" | wc -c)"
+dbg "Env: ZITADEL_API_URL=$ZITADEL_API_URL"
+dbg "Env: NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH"
+dbg "Env: ZITADEL_TLS_ENABLED=$ZITADEL_TLS_ENABLED"
+
+# Try node directly with stderr captured
+node apps/login/server.js >> /tmp/login-stdout.log 2>&1 &
 LOGIN_PID=$!
+dbg "Login UI PID: $LOGIN_PID"
 sleep 5
 if kill -0 $LOGIN_PID 2>/dev/null; then
-  echo "Login UI started successfully (PID: $LOGIN_PID)"
-  # Check if port 3000 is actually listening
-  netstat -tlnp 2>/dev/null | grep 3000 || echo "WARN: port 3000 not in netstat"
+  dbg "Login UI is ALIVE after 5s"
 else
-  echo "ERROR: Login UI failed to start within 5s"
-  cat /tmp/login-stdout.log
+  dbg "Login UI DIED within 5s"
+  cat /tmp/login-stdout.log >> /tmp/startup-debug.log 2>&1
 fi
-echo "Login UI PID: $LOGIN_PID"
 
-# Quick check: wait a moment then verify all ports are listening
-sleep 5
-echo "=== Service status check ==="
-for port in 8080 8081 3000; do
-  if curl -sf http://localhost:$port/debug/healthz > /dev/null 2>&1 || \
-     curl -sf http://localhost:$port/debug/proxy-status > /dev/null 2>&1 || \
-     curl -sf http://localhost:$port/ > /dev/null 2>&1; then
-    echo "  Port $port: RESPONDING"
-  else
-    echo "  Port $port: NOT RESPONDING"
-  fi
-done
+# Check port 3000
+sleep 2
+if curl -sf http://localhost:3000/ > /dev/null 2>&1; then
+  dbg "Port 3000: RESPONDING"
+else
+  dbg "Port 3000: NOT RESPONDING"
+fi
 
-echo "=== All services started ==="
-echo "  Proxy:     port 8080"
-echo "  ZITADEL:   port 8081"
-echo "  Login UI:  port 3000"
+# Process check
+ps aux >> /tmp/startup-debug.log 2>&1
+
+dbg "=== All services started ==="
 
 # Keep running and watch for process deaths
 while true; do
   if ! kill -0 $PROXY_PID 2>/dev/null; then
-    echo "FATAL: Proxy process died, restarting..."
+    dbg "Proxy process died, restarting..."
     node /proxy.js &
     PROXY_PID=$!
   fi
   if ! kill -0 $ZITADEL_PID 2>/dev/null; then
-    echo "WARN: ZITADEL process died, restarting..."
-    PORT=8081 /app/zitadel start-from-init \
+    dbg "ZITADEL process died, restarting..."
+    ZITADEL_PORT=8081 /app/zitadel start-from-init \
       --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
       --tlsMode external \
-      --steps /init-steps.yaml &
+      --steps /init-steps.yaml > /tmp/zitadel-stdout.log 2>&1 &
     ZITADEL_PID=$!
   fi
   if ! kill -0 $LOGIN_PID 2>/dev/null; then
-    echo "WARN: Login UI process died, restarting..."
+    dbg "Login UI process died, restarting..."
     cd /login-app
-    node apps/login/server.js &
+    node apps/login/server.js >> /tmp/login-stdout.log 2>&1 &
     LOGIN_PID=$!
   fi
   sleep 10
