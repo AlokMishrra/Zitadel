@@ -1,13 +1,21 @@
 FROM ghcr.io/zitadel/zitadel:v4.16.0 AS zitadel
+FROM ghcr.io/zitadel/zitadel-login:v4.16.0 AS login
 
-FROM alpine:3.20
+FROM node:24-alpine
 
-RUN apk add --no-cache curl ca-certificates bash
+RUN apk add --no-cache tini curl nginx bash
 
 COPY --from=zitadel /app/zitadel /app/zitadel
+COPY --from=login /app /login-app
 
+RUN mkdir -p /tmp/zitadel-pat
+
+COPY nginx.conf /etc/nginx/nginx.conf
 COPY init-steps.yaml /init-steps.yaml
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
 
 EXPOSE 8080
 
-CMD ["/bin/bash", "-c", "/app/zitadel start-from-init --masterkey 'jYCXFt5umAbioo2b9IBT6YjyamC8PvyM' --tlsMode external --steps /init-steps.yaml & ZPID=$!; for i in $(seq 1 90); do if [ -f /tmp/admin.pat ]; then PAT=$(cat /tmp/admin.pat); curl -s -X POST 'https://zeroschool-custom-ui.onrender.com/api/save-pat' -H 'Content-Type: application/json' -d \"{\\\"pat\\\":\\\"$PAT\\\"}\"; echo \"PAT sent: $PAT\"; break; fi; sleep 2; done; wait $ZPID"]
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["/start.sh"]
