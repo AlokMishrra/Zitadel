@@ -3,7 +3,7 @@ FROM ghcr.io/zitadel/zitadel-login:v4.16.0 AS login
 
 FROM node:24-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends tini curl bash && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends tini curl bash postgresql-client && rm -rf /var/lib/apt/lists/*
 
 COPY --from=zitadel /app/zitadel /app/zitadel
 COPY --from=login /app /login-app
