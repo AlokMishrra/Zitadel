@@ -92,7 +92,7 @@ async function main() {
   }
 
   log('Step 1: Finding admin user ID...');
-  const adminUserId = psqlSingle(`SELECT id FROM projections.users14 WHERE username = 'admin' AND user_type = 1 LIMIT 1`);
+  const adminUserId = psqlSingle(`SELECT id FROM projections.users14 WHERE username = 'admin' AND type = 2 LIMIT 1`);
   if (!adminUserId) {
     log('ERROR: Could not find admin machine user');
     process.exit(1);
