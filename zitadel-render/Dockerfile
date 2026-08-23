@@ -1,9 +1,9 @@
 FROM ghcr.io/zitadel/zitadel:v4.16.0 AS zitadel
 FROM ghcr.io/zitadel/zitadel-login:v4.16.0 AS login
 
-FROM node:24-alpine
+FROM node:24-slim
 
-RUN apk add --no-cache tini curl bash
+RUN apt-get update && apt-get install -y --no-install-recommends tini curl bash && rm -rf /var/lib/apt/lists/*
 
 COPY --from=zitadel /app/zitadel /app/zitadel
 COPY --from=login /app /login-app
@@ -17,5 +17,5 @@ RUN chmod +x /start.sh
 
 EXPOSE 8080
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/start.sh"]

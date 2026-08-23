@@ -62,7 +62,7 @@ done
 echo "Starting Login UI on port 3000..."
 cd /login-app
 export ZITADEL_SERVICE_USER_TOKEN="$LOGIN_PAT"
-export ZITADEL_API_URL="https://zeroschool-zitadel.onrender.com"
+export ZITADEL_API_URL="http://localhost:8081"
 export NEXT_PUBLIC_BASE_PATH="/ui/v2/login"
 export ZITADEL_TLS_ENABLED="false"
 export PORT="3000"
