@@ -58,18 +58,18 @@ if [ "$ZITADEL_READY" = false ]; then
   dbg "WARNING: ZITADEL did not become healthy in time"
 fi
 
-dbg "Creating PAT via ZITADEL API (Login V1 session flow)..."
+dbg "Creating JWT service token via machine key..."
 node /create-pat.js > /tmp/pat-create-stdout.log 2>&1 &
 PAT_PID=$!
 dbg "PAT creation PID: $PAT_PID"
 
-dbg "Waiting for PAT creation (up to 180s)..."
+dbg "Waiting for JWT creation (up to 120s)..."
 PAT_READY=false
-for i in $(seq 1 90); do
+for i in $(seq 1 60); do
   if [ -f /tmp/login-client.pat ]; then
     PAT_VAL=$(cat /tmp/login-client.pat 2>/dev/null)
-    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 10 ]; then
-      dbg "PAT ready after $((i*2))s (length=${#PAT_VAL})"
+    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 50 ]; then
+      dbg "JWT ready after $((i*2))s (length=${#PAT_VAL})"
       PAT_READY=true
       break
     fi
@@ -83,7 +83,7 @@ for i in $(seq 1 90); do
 done
 
 if [ "$PAT_READY" = false ]; then
-  dbg "WARNING: PAT not created in time"
+  dbg "WARNING: JWT not created in time"
   cat /tmp/pat-create-stdout.log >> /tmp/startup-debug.log 2>&1
 fi
 
@@ -144,9 +144,9 @@ while true; do
 
   if [ -f /tmp/login-client.pat ]; then
     PAT_VAL=$(cat /tmp/login-client.pat 2>/dev/null)
-    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 10 ]; then
+    if [ -n "$PAT_VAL" ] && [ "$PAT_VAL" != "no-pat" ] && [ ${#PAT_VAL} -gt 50 ]; then
       if [ "$LAST_PAT_CHECK" != "valid" ]; then
-        dbg "PAT detected (length=${#PAT_VAL}), restarting Login UI with valid PAT..."
+        dbg "JWT detected (length=${#PAT_VAL}), restarting Login UI with valid token..."
         kill $LOGIN_PID 2>/dev/null
         sleep 2
         cd /login-app
@@ -159,7 +159,7 @@ while true; do
         node apps/login/server.js > /tmp/login-ui-debug.log 2>&1 &
         LOGIN_PID=$!
         LAST_PAT_CHECK="valid"
-        dbg "Login UI restarted with valid PAT, PID=$LOGIN_PID"
+        dbg "Login UI restarted with valid JWT, PID=$LOGIN_PID"
       fi
     else
       LAST_PAT_CHECK=""
