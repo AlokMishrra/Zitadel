@@ -1,4 +1,6 @@
 const { Client } = require('pg');
+const express = require('express');
+const app = express();
 
 async function main() {
   console.log('Connecting to DB...');
@@ -15,7 +17,14 @@ async function main() {
   await c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   console.log('DB wiped successfully!');
   await c.end();
-  process.exit(0);
+  process.env.WIPE_DONE = 'true';
 }
 
 main().catch(e => { console.error('Error:', e.message); process.exit(1); });
+
+app.get('/', (req, res) => {
+  res.json({ status: process.env.WIPE_DONE ? 'done' : 'in_progress' });
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log('Listening on', port));

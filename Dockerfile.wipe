@@ -1,5 +1,5 @@
 FROM node:20-alpine
 WORKDIR /app
 COPY wipe-db.js .
-RUN npm install pg
+RUN npm install pg express
 CMD ["node", "wipe-db.js"]
