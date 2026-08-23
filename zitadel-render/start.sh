@@ -5,18 +5,18 @@ dbg() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> /tmp/startup-debug.log; }
 
 dbg "=== Starting ZITADEL + Login V2 + Node.js Proxy ==="
 
-dbg "[1/4] Starting Node.js proxy on port 8080..."
+dbg "[1/5] Starting Node.js proxy on port 8080..."
 node /proxy.js &
 PROXY_PID=$!
 dbg "Proxy PID: $PROXY_PID"
 sleep 1
 
-dbg "[2/4] Wiping DB for clean first-instance creation..."
+dbg "[2/5] Wiping DB for clean first-instance creation..."
 PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" > /tmp/db-wipe.log 2>&1
 dbg "DB wipe exit code: $?"
 sleep 2
 
-dbg "[3/4] Starting ZITADEL on port 8081..."
+dbg "[3/5] Starting ZITADEL on port 8081..."
 ZITADEL_PORT=8081 \
 ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED=true \
 ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI=https://zeroschool-zitadel.onrender.com/ui/v2/login \
@@ -61,7 +61,12 @@ if [ "$ZITADEL_READY" = false ]; then
   dbg "WARNING: ZITADEL did not become healthy in time"
 fi
 
-dbg "[4/4] Waiting for Login Client PAT from ZITADEL..."
+dbg "[4/5] Creating Login Client PAT via API..."
+node /create-pat.js > /tmp/pat-create-stdout.log 2>&1 &
+PAT_PID=$!
+dbg "PAT creation PID: $PAT_PID"
+
+dbg "Waiting for Login Client PAT (up to 120s)..."
 PAT_READY=false
 for i in $(seq 1 60); do
   if [ -f /tmp/login-client.pat ]; then
@@ -72,19 +77,36 @@ for i in $(seq 1 60); do
       break
     fi
   fi
+  if ! kill -0 $PAT_PID 2>/dev/null; then
+    dbg "PAT creation process exited"
+    cat /tmp/pat-create-stdout.log >> /tmp/startup-debug.log 2>&1
+    break
+  fi
   sleep 2
 done
 
 if [ "$PAT_READY" = false ]; then
-  dbg "WARNING: Login Client PAT not created in time"
+  dbg "WARNING: Login Client PAT not created, will try admin PAT as fallback"
+  cat /tmp/pat-create-stdout.log >> /tmp/startup-debug.log 2>&1
 fi
 
 dbg "[5/5] Starting Login UI on port 3000..."
 cd /login-app
 
-PAT_CONTENT="no-pat"
+PAT_CONTENT=""
 if [ -f /tmp/login-client.pat ]; then
   PAT_CONTENT=$(cat /tmp/login-client.pat 2>/dev/null)
+fi
+if [ -z "$PAT_CONTENT" ] || [ "$PAT_CONTENT" = "no-pat" ]; then
+  dbg "No login-client PAT, trying admin PAT from /tmp/admin.pat"
+  if [ -f /tmp/admin.pat ]; then
+    PAT_CONTENT=$(cat /tmp/admin.pat 2>/dev/null)
+    dbg "Using admin PAT (length=${#PAT_CONTENT})"
+  fi
+fi
+if [ -z "$PAT_CONTENT" ] || [ "$PAT_CONTENT" = "no-pat" ]; then
+  dbg "WARNING: No PAT available, login UI may not work"
+  PAT_CONTENT=""
 fi
 
 ZITADEL_API_URL="http://localhost:8081" \
@@ -121,9 +143,14 @@ while true; do
   if ! kill -0 $LOGIN_PID 2>/dev/null; then
     dbg "Login UI died, restarting..."
     cd /login-app
-    PAT_CONTENT="no-pat"
+    PAT_CONTENT=""
     if [ -f /tmp/login-client.pat ]; then
       PAT_CONTENT=$(cat /tmp/login-client.pat 2>/dev/null)
+    fi
+    if [ -z "$PAT_CONTENT" ] || [ "$PAT_CONTENT" = "no-pat" ]; then
+      if [ -f /tmp/admin.pat ]; then
+        PAT_CONTENT=$(cat /tmp/admin.pat 2>/dev/null)
+      fi
     fi
     ZITADEL_API_URL="http://localhost:8081" \
     ZITADEL_SERVICE_USER_TOKEN="$PAT_CONTENT" \
@@ -154,7 +181,7 @@ while true; do
         node apps/login/server.js > /tmp/login-ui-debug.log 2>&1 &
         LOGIN_PID=$!
         LAST_PAT_CHECK="valid"
-        dbg "Login UI restarted with valid JWT, PID=$LOGIN_PID"
+        dbg "Login UI restarted with valid PAT, PID=$LOGIN_PID"
       fi
     else
       LAST_PAT_CHECK=""
