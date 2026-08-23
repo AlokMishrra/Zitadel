@@ -14,7 +14,7 @@ function log(msg) {
   console.log(entry);
 }
 
-const DB_HOST = process.env.ZITADEL_DB_HOST || 'dpg-da47aj2jobas73aeuag0-a.oregon-postgres.render.com';
+const DB_HOST = process.env.ZITADEL_DB_HOST || 'dpg-da47aj2jobas73aeuag0-a';
 const DB_PORT = process.env.ZITADEL_DB_PORT || '5432';
 const DB_NAME = process.env.ZITADEL_DB || 'zitadel_db';
 const DB_USER = process.env.ZITADEL_DB_USER || 'zitadel_db_user';
@@ -153,7 +153,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const safeQuery = query.replace(/'/g, "'\\''");
-      const psqlCmd = `PGPASSWORD='${DB_PASS}' psql "sslmode=require host=${DB_HOST} port=${DB_PORT} dbname=${DB_NAME} user=${DB_USER}" -t -A -c '${safeQuery}'`;
+      const psqlCmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -t -A -c '${safeQuery}'`;
       log('DB debug query: ' + query.slice(0, 200));
       exec(psqlCmd, { timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
