@@ -33,7 +33,14 @@ function proxy(req, res, targetPort) {
 }
 
 const server = http.createServer((req, res) => {
-  // Debug endpoint
+  // Health check - always return 200 so Render doesn't kill us during startup
+  if (req.url === '/debug/healthz') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
+    return;
+  }
+
+  // Debug endpoint with logs
   if (req.url === '/debug/proxy-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ logs: logs.slice(-50), uptime: process.uptime() }));
