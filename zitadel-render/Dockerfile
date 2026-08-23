@@ -1,20 +1,11 @@
-FROM ghcr.io/zitadel/zitadel:v4.16.0 AS zitadel
-FROM ghcr.io/zitadel/zitadel-login:v4.16.0 AS login
+FROM ghcr.io/zitadel/zitadel:v4.16.0
 
-FROM node:24-alpine
+RUN apk add --no-cache curl
 
-RUN apk add --no-cache tini curl nginx
-
-COPY --from=zitadel /app/zitadel /app/zitadel
-COPY --from=login /app /login-app
-
-COPY config.yaml /config.yaml
 COPY init-steps.yaml /init-steps.yaml
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
+COPY extract-pat.sh /extract-pat.sh
+RUN chmod +x /extract-pat.sh
 
 EXPOSE 8080
 
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["/start.sh"]
+CMD ["/bin/sh", "-c", "/app/zitadel start-from-init --masterkey 'jYCXFt5umAbioo2b9IBT6YjyamC8PvyM' --tlsMode external --steps /init-steps.yaml & ZPID=$!; sleep 30; /extract-pat.sh; wait $ZPID"]

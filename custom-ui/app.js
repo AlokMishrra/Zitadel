@@ -20,6 +20,21 @@ app.use(session({
 
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
+let savedPAT = null;
+
+app.post('/api/save-pat', (req, res) => {
+  const { pat } = req.body;
+  if (!pat) return res.status(400).json({ error: 'Missing pat' });
+  savedPAT = pat;
+  cachedPAT = pat;
+  console.log('PAT received and cached:', pat.substring(0, 20) + '...');
+  res.json({ success: true });
+});
+
+app.get('/api/get-pat', (req, res) => {
+  res.json({ pat: savedPAT || cachedPAT || null });
+});
+
 app.get('/api/wipe-db', async (req, res) => {
   try {
     const c = new Client({
@@ -58,6 +73,7 @@ let cachedPAT = null;
 
 function getPAT() {
   if (cachedPAT) return cachedPAT;
+  if (savedPAT) { cachedPAT = savedPAT; return cachedPAT; }
   const envPAT = process.env.ZITADEL_PAT;
   if (envPAT) { cachedPAT = envPAT; return cachedPAT; }
   try {
@@ -65,7 +81,6 @@ function getPAT() {
     try { cachedPAT = JSON.parse(raw).token || raw; } catch { cachedPAT = raw; }
     return cachedPAT;
   } catch (e) {
-    console.error('Failed to read PAT:', e.message);
     return null;
   }
 }
