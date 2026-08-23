@@ -1,4 +1,5 @@
 const http = require('http');
+const fs = require('fs');
 
 const ZITADEL_PORT = 8081;
 const LOGIN_PORT = 3000;
@@ -58,6 +59,32 @@ const server = http.createServer((req, res) => {
   if (req.url === '/debug/proxy-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ logs: logs.slice(-50), uptime: process.uptime() }));
+    return;
+  }
+
+  // ZITADEL logs
+  if (req.url === '/debug/zitadel-logs') {
+    try {
+      const out = fs.readFileSync('/tmp/zitadel-stdout.log', 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(out.slice(-5000));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('No ZITADEL logs yet: ' + e.message);
+    }
+    return;
+  }
+
+  // Login UI logs
+  if (req.url === '/debug/login-logs') {
+    try {
+      const out = fs.readFileSync('/tmp/login-stdout.log', 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(out.slice(-5000));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('No Login UI logs yet: ' + e.message);
+    }
     return;
   }
 

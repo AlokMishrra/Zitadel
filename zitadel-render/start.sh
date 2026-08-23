@@ -15,7 +15,7 @@ echo "[2/4] Starting ZITADEL on port 8081..."
 PORT=8081 /app/zitadel start-from-init \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
   --tlsMode external \
-  --steps /init-steps.yaml &
+  --steps /init-steps.yaml > /tmp/zitadel-stdout.log 2>&1 &
 ZITADEL_PID=$!
 echo "ZITADEL PID: $ZITADEL_PID"
 
@@ -67,7 +67,7 @@ export NEXT_PUBLIC_BASE_PATH="/ui/v2/login"
 export ZITADEL_TLS_ENABLED="false"
 export PORT="3000"
 export NODE_ENV="production"
-node apps/login/server.js &
+node apps/login/server.js > /tmp/login-stdout.log 2>&1 &
 LOGIN_PID=$!
 sleep 3
 if kill -0 $LOGIN_PID 2>/dev/null; then
