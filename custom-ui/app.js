@@ -71,7 +71,7 @@ function getPAT() {
 }
 
 function zitadelHeaders() {
-  return { Authorization: `Bearer ${getPAT()}`, Host: 'localhost', 'Content-Type': 'application/json' };
+  return { Authorization: `Bearer ${getPAT()}`, Host: 'zeroschool-zitadel.onrender.com', 'Content-Type': 'application/json' };
 }
 
 function detectRole(host) {
