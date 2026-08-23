@@ -131,18 +131,17 @@ app.get('/api/classes', (req, res) => res.json(CLASSES));
 
 app.get('/api/generate-email', async (req, res) => {
   try {
-    const { firstName, className, schoolId, lastName } = req.query;
-    const role = req.userRole || 'student';
+    const { firstName, className, schoolId, lastName, role } = req.query;
     if (!firstName || !schoolId) return res.status(400).json({ error: 'Missing fields' });
-    if (role === 'student') {
-      if (!className) return res.status(400).json({ error: 'Missing class' });
-      const result = await generateUniqueEmail(firstName, null, className, schoolId, null);
-      return res.json({ email: result.email });
+    if (role === 'teacher') {
+      if (!lastName) return res.status(400).json({ error: 'Missing last name' });
+      const base = generateTeacherBaseEmail(firstName, lastName, schoolId);
+      return res.json({ email: base + '@zeroschool.org' });
     }
-    if (!lastName) return res.status(400).json({ error: 'Missing last name' });
-    const base = generateTeacherBaseEmail(firstName, lastName, schoolId);
-    const email = base + '@zeroschool.org';
-    res.json({ email });
+    if (!className) return res.status(400).json({ error: 'Missing class' });
+    const candidates = generateEmailCandidates(firstName, className, schoolId, null);
+    const base = generateBaseEmail(firstName, className, schoolId);
+    res.json({ email: base + '@zeroschool.org', username: candidates[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
