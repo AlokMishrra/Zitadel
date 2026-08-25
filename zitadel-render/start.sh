@@ -11,9 +11,20 @@ PROXY_PID=$!
 dbg "Proxy PID: $PROXY_PID"
 sleep 1
 
-dbg "[2/4] Wiping DB for clean first-instance creation..."
-PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" > /tmp/db-wipe.log 2>&1
+dbg "[2/4] Wiping ALL ZITADEL schemas for clean first-instance creation..."
+# ZITADEL spreads state across many schemas. Dropping only "public" leaves the
+# eventstore + setup-step records intact, so start-from-init skips the
+# 03_default_instance step and never writes the PAT files.
+PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db \
+  -v ON_ERROR_STOP=0 \
+  -c "DROP SCHEMA IF EXISTS adminapi, auth, cache, eventstore, logstore, projections, queue, system, public CASCADE;" \
+  -c "CREATE SCHEMA public;" > /tmp/db-wipe.log 2>&1
 dbg "DB wipe exit code: $?"
+
+REMAINING=$(PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -t -A \
+  -c "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('eventstore','projections','auth','system','adminapi');" 2>/dev/null)
+dbg "ZITADEL schemas remaining after wipe: ${REMAINING:-unknown} (expect 0)"
+cat /tmp/db-wipe.log >> /tmp/startup-debug.log 2>&1
 sleep 2
 
 rm -f /tmp/login-client.pat /tmp/admin.pat
@@ -72,12 +83,28 @@ fi
 dbg "Waiting 15s for projections to build..."
 sleep 15
 
+# start-from-init writes the PAT during the 03_default_instance setup step,
+# which completes before the server starts listening. Poll anyway to be safe.
 PAT_CONTENT=""
-if [ -f /tmp/login-client.pat ]; then
-  PAT_CONTENT=$(cat /tmp/login-client.pat 2>/dev/null)
-  dbg "Login-client PAT file found, length: ${#PAT_CONTENT}"
-else
-  dbg "WARNING: /tmp/login-client.pat does not exist after ZITADEL startup"
+for i in $(seq 1 15); do
+  if [ -s /tmp/login-client.pat ]; then
+    PAT_CONTENT=$(cat /tmp/login-client.pat 2>/dev/null)
+    dbg "Login-client PAT file found after $((i*2))s, length: ${#PAT_CONTENT}"
+    break
+  fi
+  sleep 2
+done
+
+if [ -z "$PAT_CONTENT" ]; then
+  dbg "ERROR: /tmp/login-client.pat missing/empty after ZITADEL startup"
+  dbg "--- files in /tmp ---"
+  ls -la /tmp >> /tmp/startup-debug.log 2>&1
+  dbg "--- zitadel log lines mentioning pat/instance/setup step ---"
+  grep -iE "pat|default_instance|login.?client|permission denied" /tmp/zitadel-stdout.log 2>/dev/null | tail -40 >> /tmp/startup-debug.log 2>&1
+fi
+
+if [ -f /tmp/admin.pat ]; then
+  dbg "Admin PAT file present, length: $(wc -c < /tmp/admin.pat 2>/dev/null)"
 fi
 
 if [ -z "$PAT_CONTENT" ] || [ ${#PAT_CONTENT} -le 50 ]; then
