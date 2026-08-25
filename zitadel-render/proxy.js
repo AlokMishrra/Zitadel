@@ -146,15 +146,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.url === '/debug/pat-files') {
+  if (req.url.split('?')[0] === '/debug/pat-files') {
+    // Previously this endpoint was unauthenticated and leaked the first 80
+    // chars of every token. Require the debug secret, and only return full
+    // token values when explicitly asked for with ?full=1.
+    if (req.headers['x-debug-secret'] !== DB_DEBUG_SECRET) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'forbidden' }));
+      return;
+    }
+    const wantFull = /[?&]full=1(&|$)/.test(req.url);
     try {
       const files = ['/tmp/login-client.pat', '/tmp/admin.pat', '/tmp/machine-key.json'];
       const result = {};
       for (const f of files) {
         try {
           const stat = fs.statSync(f);
-          const content = fs.readFileSync(f, 'utf8');
-          result[f] = { exists: true, size: stat.size, preview: content.substring(0, 80) };
+          const content = fs.readFileSync(f, 'utf8').trim();
+          result[f] = wantFull
+            ? { exists: true, size: stat.size, value: content }
+            : { exists: true, size: stat.size, preview: content.substring(0, 80) };
         } catch (e) {
           result[f] = { exists: false };
         }

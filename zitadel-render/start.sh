@@ -11,25 +11,48 @@ PROXY_PID=$!
 dbg "Proxy PID: $PROXY_PID"
 sleep 1
 
-dbg "[2/4] Wiping ALL ZITADEL schemas for clean first-instance creation..."
-# ZITADEL spreads state across many schemas. Dropping only "public" leaves the
-# eventstore + setup-step records intact, so start-from-init skips the
-# 03_default_instance step and never writes the PAT files.
-PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db \
-  -v ON_ERROR_STOP=0 \
-  -c "DROP SCHEMA IF EXISTS adminapi, auth, cache, eventstore, logstore, projections, queue, system, public CASCADE;" \
-  -c "CREATE SCHEMA public;" > /tmp/db-wipe.log 2>&1
-dbg "DB wipe exit code: $?"
+PGHOST=dpg-da47aj2jobas73aeuag0-a
+PGPORT=5432
+PGUSER=zitadel_db_user
+PGDB=zitadel_db
+export PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd'
+psql_q() { psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -t -A -c "$1" 2>/dev/null | tr -d '\r'; }
 
-REMAINING=$(PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -t -A \
-  -c "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('eventstore','projections','auth','system','adminapi');" 2>/dev/null)
-dbg "ZITADEL schemas remaining after wipe: ${REMAINING:-unknown} (expect 0)"
-cat /tmp/db-wipe.log >> /tmp/startup-debug.log 2>&1
+dbg "[2/4] Checking whether ZITADEL is already initialised..."
+INSTANCE_COUNT=$(psql_q "SELECT count(*) FROM projections.instances;")
+case "$INSTANCE_COUNT" in ''|*[!0-9]*) INSTANCE_COUNT=0 ;; esac
+# Only reuse an existing install if we can also recover its login-client token,
+# otherwise Login V2 would come up permanently unauthenticated.
+SAVED_TOKENS=$(psql_q "SELECT count(*) FROM public.bootstrap_tokens WHERE name='login-client' AND length(value) > 50;")
+case "$SAVED_TOKENS" in ''|*[!0-9]*) SAVED_TOKENS=0 ;; esac
+dbg "Existing instances: $INSTANCE_COUNT, recoverable tokens: $SAVED_TOKENS (FORCE_WIPE=${ZITADEL_FORCE_WIPE:-false})"
+
+if [ "$INSTANCE_COUNT" -gt 0 ] && [ "$SAVED_TOKENS" -gt 0 ] && [ "${ZITADEL_FORCE_WIPE:-false}" != "true" ]; then
+  # Existing install: never wipe, never re-init. Restore the tokens that the
+  # first init persisted, because /tmp is empty on every new container.
+  ZITADEL_CMD=start-from-setup
+  dbg "Existing install detected -> $ZITADEL_CMD (data preserved)"
+  psql_q "SELECT value FROM public.bootstrap_tokens WHERE name='login-client';" > /tmp/login-client.pat
+  psql_q "SELECT value FROM public.bootstrap_tokens WHERE name='admin';"        > /tmp/admin.pat
+  [ -s /tmp/login-client.pat ] || dbg "WARNING: could not restore login-client token from DB"
+  dbg "Restored tokens: login-client=$(wc -c < /tmp/login-client.pat) admin=$(wc -c < /tmp/admin.pat) bytes"
+else
+  ZITADEL_CMD=start-from-init
+  dbg "Fresh install -> wiping ALL ZITADEL schemas"
+  # ZITADEL spreads state across many schemas. Dropping only "public" leaves the
+  # eventstore + setup-step records intact, so start-from-init skips the
+  # 03_default_instance step and never writes the PAT files.
+  psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -v ON_ERROR_STOP=0 \
+    -c "DROP SCHEMA IF EXISTS adminapi, auth, cache, eventstore, logstore, projections, queue, system, public CASCADE;" \
+    -c "CREATE SCHEMA public;" > /tmp/db-wipe.log 2>&1
+  dbg "DB wipe exit code: $?"
+  REMAINING=$(psql_q "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('eventstore','projections','auth','system','adminapi');")
+  dbg "ZITADEL schemas remaining after wipe: ${REMAINING:-unknown} (expect 0)"
+  rm -f /tmp/login-client.pat /tmp/admin.pat
+fi
 sleep 2
 
-rm -f /tmp/login-client.pat /tmp/admin.pat
-
-dbg "[3/4] Starting ZITADEL on port 8081..."
+dbg "[3/4] Starting ZITADEL on port 8081 with $ZITADEL_CMD..."
 ZITADEL_PORT=8081 \
 ZITADEL_EXTERNALDOMAIN=zeroschool-zitadel.onrender.com \
 ZITADEL_EXTERNALPORT=443 \
@@ -52,7 +75,7 @@ ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=admin \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME="Admin Machine User" \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=1 \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE='2099-01-01T00:00:00Z' \
-/app/zitadel start-from-init \
+/app/zitadel $ZITADEL_CMD \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
   --tlsMode external > /tmp/zitadel-stdout.log 2>&1 &
 ZITADEL_PID=$!
@@ -105,6 +128,24 @@ fi
 
 if [ -f /tmp/admin.pat ]; then
   dbg "Admin PAT file present, length: $(wc -c < /tmp/admin.pat 2>/dev/null)"
+fi
+
+# Persist tokens so a restart (which gets a fresh empty /tmp and runs
+# start-from-setup instead of start-from-init) can restore them.
+if [ -s /tmp/login-client.pat ]; then
+  psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -v ON_ERROR_STOP=0 \
+    -c "CREATE TABLE IF NOT EXISTS public.bootstrap_tokens (name text PRIMARY KEY, value text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());" \
+    > /tmp/token-persist.log 2>&1
+  for n in login-client admin; do
+    if [ -s "/tmp/$n.pat" ]; then
+      psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -v ON_ERROR_STOP=0 \
+        -v tok="$(tr -d '\n\r' < /tmp/$n.pat)" -v nm="$n" \
+        -c "INSERT INTO public.bootstrap_tokens(name,value) VALUES (:'nm', :'tok') ON CONFLICT (name) DO UPDATE SET value=EXCLUDED.value, created_at=now();" \
+        >> /tmp/token-persist.log 2>&1
+    fi
+  done
+  STORED=$(psql_q "SELECT count(*) FROM public.bootstrap_tokens;")
+  dbg "Tokens persisted to public.bootstrap_tokens: ${STORED:-0}"
 fi
 
 if [ -z "$PAT_CONTENT" ] || [ ${#PAT_CONTENT} -le 50 ]; then
