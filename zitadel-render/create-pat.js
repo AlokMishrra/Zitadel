@@ -201,11 +201,12 @@ async function main() {
       psqlExec(`INSERT INTO projections.keys4_public (id, instance_id, expiry, key) VALUES ('${keyId}', '${instanceId}', '9999-12-31 23:59:59+00', decode('${publicKeyB64}', 'base64'))`);
 
       const now2 = Math.floor(Date.now() / 1000);
+      const issuer = 'https://zeroschool-zitadel.onrender.com';
       const jwtHeader = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: keyId })).toString('base64url');
       const jwtPayload = Buffer.from(JSON.stringify({
-        iss: instanceId,
+        iss: issuer,
         sub: adminUserId,
-        aud: [instanceId],
+        aud: [issuer],
         iat: now2,
         exp: now2 + 365 * 24 * 3600,
         jti: crypto.randomUUID(),
