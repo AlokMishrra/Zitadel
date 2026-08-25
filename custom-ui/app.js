@@ -123,6 +123,23 @@ function detectRole(host) {
 
 const c = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+// ZITADEL parses phone numbers to E.164 and, without a country code, falls back
+// to its own default (observed: +41 Switzerland), silently corrupting the number.
+// Always send an explicit country code.
+const DEFAULT_PHONE_CC = process.env.DEFAULT_PHONE_COUNTRY_CODE || '+91';
+
+function normalizePhone(phone) {
+  if (!phone) return null;
+  const raw = String(phone).trim();
+  if (raw.startsWith('+')) return '+' + raw.slice(1).replace(/\D/g, '');
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  const cc = DEFAULT_PHONE_CC.replace(/\D/g, '');
+  // Already prefixed with the country code but missing the leading '+'.
+  if (digits.length > 10 && digits.startsWith(cc)) return '+' + digits;
+  return DEFAULT_PHONE_CC + digits;
+}
+
 function generateBaseEmail(firstName, className, schoolId) {
   return `st${c(firstName)}${c(className)}${c(schoolId)}`;
 }
@@ -138,8 +155,8 @@ async function tryCreateStudent(firstName, lastName, className, schoolId, phone,
   const payload = {
     username,
     profile: { givenName: firstName, familyName: lastName || '', displayName: `${firstName} ${lastName || ''}`.trim() },
-    email: { email, verified: true },
-    phone: phone ? { phone } : undefined,
+    email: { email, isVerified: true },
+    phone: normalizePhone(phone) ? { phone: normalizePhone(phone), isVerified: true } : undefined,
     password: { password, changeRequired: false },
     metadata: [
       { key: 'role', value: Buffer.from('student').toString('base64') },
@@ -350,8 +367,8 @@ app.post('/api/register/teacher', async (req, res) => {
         await axios.post(`${ZITADEL_INTERNAL}/v2/users/human`, {
           username,
           profile: { givenName: firstName, familyName: lastName, displayName: `${firstName} ${lastName}` },
-          email: { email: loginName + '@zeroschool.org', verified: true },
-          phone: phone ? { phone } : undefined,
+      email: { email: loginName + '@zeroschool.org', isVerified: true },
+      phone: normalizePhone(phone) ? { phone: normalizePhone(phone), isVerified: true } : undefined,
           password: { password, changeRequired: false },
           metadata: [
             { key: 'role', value: Buffer.from('teacher').toString('base64') },
