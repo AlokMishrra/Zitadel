@@ -16,6 +16,8 @@ PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a
 dbg "DB wipe exit code: $?"
 sleep 2
 
+rm -f /tmp/login-client.pat /tmp/admin.pat
+
 dbg "[3/4] Starting ZITADEL on port 8081..."
 ZITADEL_PORT=8081 \
 ZITADEL_EXTERNALDOMAIN=zeroschool-zitadel.onrender.com \
@@ -30,9 +32,14 @@ ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME=Patil \
 ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL=school@zeroschool.org \
 ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD='Zeroschool@123' \
 ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=false \
+ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME=login-client \
+ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME="Automatically Initialized IAM_LOGIN_CLIENT" \
+ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE='2099-01-01T00:00:00Z' \
+ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH=/tmp/login-client.pat \
+ZITADEL_FIRSTINSTANCE_PATPATH=/tmp/admin.pat \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=admin \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME="Admin Machine User" \
-ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=2 \
+ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=1 \
 ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE='2099-01-01T00:00:00Z' \
 /app/zitadel start-from-init \
   --masterkey "jYCXFt5umAbioo2b9IBT6YjyamC8PvyM" \
@@ -58,27 +65,23 @@ done
 
 if [ "$ZITADEL_READY" = false ]; then
   dbg "FATAL: ZITADEL did not become healthy in time"
+  tail -50 /tmp/zitadel-stdout.log >> /tmp/startup-debug.log 2>&1
   exit 1
 fi
 
-dbg "Waiting 10s for projections to build..."
-sleep 10
-
-rm -f /tmp/login-client.pat /tmp/admin.pat /tmp/pat-creation-status.txt
-
-dbg "Creating JWT service token via machine key..."
-node /create-pat.js > /tmp/pat-create-stdout.log 2>&1
-PAT_EXIT=$?
-dbg "PAT creation exit code: $PAT_EXIT"
-cat /tmp/pat-create-stdout.log >> /tmp/startup-debug.log 2>&1
+dbg "Waiting 15s for projections to build..."
+sleep 15
 
 PAT_CONTENT=""
 if [ -f /tmp/login-client.pat ]; then
   PAT_CONTENT=$(cat /tmp/login-client.pat 2>/dev/null)
+  dbg "Login-client PAT file found, length: ${#PAT_CONTENT}"
+else
+  dbg "WARNING: /tmp/login-client.pat does not exist after ZITADEL startup"
 fi
 
-if [ -z "$PAT_CONTENT" ] || [ "$PAT_CONTENT" = "no-pat" ] || [ ${#PAT_CONTENT} -le 50 ]; then
-  dbg "WARNING: No valid PAT, Login V2 will not work"
+if [ -z "$PAT_CONTENT" ] || [ ${#PAT_CONTENT} -le 50 ]; then
+  dbg "WARNING: No valid PAT from ZITADEL, Login V2 will not work"
   PAT_CONTENT="no-pat"
 fi
 
