@@ -74,19 +74,43 @@ let cachedPAT = null;
 function getPAT() {
   if (cachedPAT) return cachedPAT;
   if (savedPAT) { cachedPAT = savedPAT; return cachedPAT; }
-  const envPAT = process.env.ZITADEL_PAT;
+  const envPAT = (process.env.ZITADEL_PAT || '').trim();
   if (envPAT) { cachedPAT = envPAT; return cachedPAT; }
   try {
     const raw = fs.readFileSync(PAT_FILE, 'utf8').trim();
     try { cachedPAT = JSON.parse(raw).token || raw; } catch { cachedPAT = raw; }
-    return cachedPAT;
-  } catch (e) {
-    return null;
-  }
+    if (cachedPAT) return cachedPAT;
+  } catch (e) { /* fall through to the explicit error below */ }
+  // Previously this returned null and zitadelHeaders() sent the literal string
+  // "Bearer null", which ZITADEL rejects as Errors.Token.Invalid (AUTH-7fs1e).
+  // Fail loudly instead so the real cause is obvious.
+  throw new Error(
+    'No ZITADEL service token available. Set the ZITADEL_PAT environment variable ' +
+    `(or place a token at ${PAT_FILE}, or POST one to /api/save-pat).`
+  );
+}
+
+// Drop the cached token so the next call re-reads env/file. Used when ZITADEL
+// rejects the token, e.g. after the instance was re-initialised and the old
+// PAT no longer exists.
+function invalidatePAT() {
+  cachedPAT = null;
+  savedPAT = null;
+}
+
+function isAuthError(err) {
+  const status = err.response?.status;
+  const msg = err.response?.data?.message || '';
+  return status === 401 || status === 403 || msg.includes('Errors.Token.Invalid') || msg.includes('AUTH-7fs1e');
 }
 
 function zitadelHeaders() {
-  return { Authorization: `Bearer ${getPAT()}`, Host: 'zeroschool-zitadel.onrender.com', 'Content-Type': 'application/json' };
+  // Host must match ZITADEL's configured ExternalDomain. Derive it from the
+  // target URL rather than hardcoding, so changing ZITADEL_INTERNAL can't
+  // silently produce a mismatched Host header.
+  let host;
+  try { host = new URL(ZITADEL_INTERNAL).host; } catch (e) { host = 'zeroschool-zitadel.onrender.com'; }
+  return { Authorization: `Bearer ${getPAT()}`, Host: host, 'Content-Type': 'application/json' };
 }
 
 function detectRole(host) {
@@ -251,17 +275,31 @@ app.post('/api/register/student', async (req, res) => {
     }
     const candidates = generateEmailCandidates(firstName, className, schoolId, phone);
     let created = null;
+    let retriedAuth = false;
     for (const loginName of candidates) {
       try {
         created = await tryCreateStudent(firstName, lastName, className, schoolId, phone, password, loginName);
         break;
       } catch (err) {
+        // A rejected service token is not a username collision. Re-read the
+        // token once in case it was rotated, then give up with a clear error.
+        if (isAuthError(err) && !retriedAuth) {
+          retriedAuth = true;
+          invalidatePAT();
+          try {
+            created = await tryCreateStudent(firstName, lastName, className, schoolId, phone, password, loginName);
+            break;
+          } catch (err2) {
+            if (isAuthError(err2)) throw err2;
+            err = err2;
+          }
+        }
         const msg = err.response?.data?.message || '';
         if (msg.includes('already exists') || msg.includes('V3-') || msg.includes('Username') || msg.includes('UNIQUE')) continue;
         throw err;
       }
     }
-    if (!created) return res.status(500).json({ error: 'Could not generate unique username' });
+    if (!created) return res.status(409).json({ error: 'Could not generate a unique username for this student' });
 
     const username = created.username;
     const sessionResp = await axios.post(`${ZITADEL_INTERNAL}/v2/sessions`, {
@@ -282,6 +320,12 @@ app.post('/api/register/student', async (req, res) => {
     res.json({ success: true, email: created.email, redirect: '/dashboard' });
   } catch (err) {
     console.error('Student register error:', err.response?.data || err.message);
+    if (isAuthError(err)) {
+      return res.status(502).json({
+        error: 'ZITADEL rejected the service token. The ZITADEL_PAT for this app is missing, ' +
+               'expired, or belongs to a previous ZITADEL instance. Set a current admin PAT and redeploy.'
+      });
+    }
     res.status(500).json({ error: err.response?.data?.message || err.message || 'Registration failed' });
   }
 });
