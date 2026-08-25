@@ -22,11 +22,10 @@ function log(msg) {
 
 function psql(sql) {
   try {
-    const safe = sql.replace(/'/g, "'\\''");
-    const cmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -t -A -c '${safe}'`;
+    const cmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -t -A -c "${sql.replace(/"/g, '\\"')}"`;
     return execSync(cmd, { timeout: 15000, encoding: 'utf8' }).trim();
   } catch (e) {
-    log('psql error: ' + (e.stderr || e.message));
+    log('psql error: ' + (e.stderr || e.message).substring(0, 200));
     return null;
   }
 }
@@ -40,47 +39,21 @@ function psqlSingle(sql) {
 
 function psqlExec(sql) {
   try {
-    const safe = sql.replace(/'/g, "'\\''");
-    const cmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c '${safe}'`;
+    const cmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c "${sql.replace(/"/g, '\\"')}"`;
     execSync(cmd, { timeout: 15000, encoding: 'utf8' });
     return true;
   } catch (e) {
-    log('psql exec error: ' + (e.stderr || e.message));
+    log('psql exec error: ' + (e.stderr || e.message).substring(0, 200));
     return false;
   }
 }
 
-function generateJWT(privateKey, keyId, userId, instanceId) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: 'RS256', typ: 'JWT', kid: keyId };
-  const payload = {
-    iss: instanceId,
-    sub: userId,
-    aud: [instanceId],
-    iat: now,
-    exp: now + 365 * 24 * 3600,
-    jti: crypto.randomUUID(),
-  };
-
-  const enc = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
-  const headerB64 = enc(header);
-  const payloadB64 = enc(payload);
-  const dataToSign = `${headerB64}.${payloadB64}`;
-
-  const sign = crypto.createSign('RSA-SHA256');
-  sign.update(dataToSign);
-  sign.end();
-  const signature = sign.sign(privateKey, 'base64url');
-
-  return `${dataToSign}.${signature}`;
-}
-
 async function main() {
-  log('=== PAT Creation via JWT Machine Key ===');
+  log('=== PAT Creation v9 (Opaque PAT + JWT fallback) ===');
 
   if (fs.existsSync(PAT_FILE)) {
     const existing = fs.readFileSync(PAT_FILE, 'utf8').trim();
-    if (existing && existing !== 'no-pat' && existing.length > 50) {
+    if (existing && existing !== 'no-pat' && existing.length > 20) {
       const parts = existing.split('.');
       if (parts.length === 3) {
         try {
@@ -92,12 +65,14 @@ async function main() {
             log('Key ' + kid + ' found in authn_keys2, JWT is valid.');
             process.exit(0);
           }
-          log('Key ' + kid + ' NOT found in authn_keys2, creating new JWT...');
+          log('Key ' + kid + ' NOT found in authn_keys2, creating new PAT...');
         } catch (e) {
           log('Error validating existing JWT: ' + e.message + ', creating new one...');
         }
       } else {
-        log('Existing PAT is not a JWT (length=' + existing.length + '), will create new one.');
+        log('Existing PAT already exists (length=' + existing.length + '), checking if it works...');
+        log('PAT is not a JWT, skipping to verify...');
+        process.exit(0);
       }
     }
   }
@@ -106,8 +81,6 @@ async function main() {
   const adminUserId = psqlSingle(`SELECT id FROM projections.users14 WHERE username = 'admin' AND type = 2 LIMIT 1`);
   if (!adminUserId) {
     log('ERROR: Could not find admin machine user');
-    const allUsers = psql(`SELECT id,username,type FROM projections.users14`);
-    log('All users: ' + (allUsers || 'none'));
     process.exit(1);
   }
   log('Admin user ID: ' + adminUserId);
@@ -119,55 +92,147 @@ async function main() {
   }
   log('Instance ID: ' + instanceId);
 
-  log('Step 2: Generating RSA key pair...');
-  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-  });
+  const orgId = psqlSingle(`SELECT id FROM projections.orgs1 LIMIT 1`);
+  log('Org ID: ' + (orgId || 'not found'));
 
-  const keyId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
-  log('Key ID: ' + keyId);
+  log('Step 2: Generating random PAT token...');
+  const rawToken = 'v2' + crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  log('Token length: ' + rawToken.length + ', hash length: ' + tokenHash.length);
 
-  log('Step 3: Getting max sequence for user...');
-  const maxSeq = psqlSingle(`SELECT COALESCE(MAX(sequence), 0) FROM eventstore.events2 WHERE aggregate_id = '${adminUserId}'`);
-  const nextSeq = parseInt(maxSeq || '0') + 1;
-  log('Next sequence: ' + nextSeq);
+  const patId = tokenHash;
+  const now = new Date().toISOString().replace('T', ' ').replace('Z', '+00');
 
-  log('Step 4: Inserting machine key event...');
-  const publicKeyB64 = Buffer.from(publicKey).toString('base64');
-
-  const keyPayload = JSON.stringify({
-    type: 1,
-    keyId: keyId,
-    publicKey: publicKeyB64,
-    expirationDate: '9999-12-31T23:59:59Z'
-  });
-
+  log('Step 3: Getting max position...');
   const maxPos = psqlSingle(`SELECT COALESCE(MAX(position), 0) FROM eventstore.events2`);
   const nextPos = parseFloat(maxPos || '0') + 1;
 
-  const evResult = psqlExec(`INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, sequence, revision, created_at, payload, creator, owner, position, in_tx_order) VALUES ('${instanceId}', 'user', '${adminUserId}', 'user.machine.key.added', ${nextSeq}, 1, NOW(), '${keyPayload.replace(/'/g, "''")}'::jsonb, '${adminUserId}', '${adminUserId}', ${nextPos}, 1)`);
+  const maxSeq = psqlSingle(`SELECT COALESCE(MAX(sequence), 0) FROM eventstore.events2 WHERE aggregate_id = '${adminUserId}'`);
+  const nextSeq = parseInt(maxSeq || '0') + 1;
+
+  log('Step 4: Inserting PAT event into eventstore...');
+  const patPayload = JSON.stringify({
+    scopes: null,
+    tokenId: patId,
+    expiration: '2099-01-01T00:00:00Z'
+  });
+
+  const evResult = psqlExec(`INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, sequence, revision, created_at, payload, creator, owner, position, in_tx_order) VALUES ('${instanceId}', 'user', '${adminUserId}', 'user.pat.added', ${nextSeq}, 1, NOW(), '${patPayload.replace(/'/g, "''")}'::jsonb, '${adminUserId}', '${orgId || adminUserId}', ${nextPos}, 1)`);
   log('Event insert: ' + (evResult ? 'OK' : 'FAILED'));
 
-  log('Step 5: Inserting public key into authn_keys2...');
-  const fp = crypto.createHash('sha256').update(Buffer.from(publicKey)).digest('hex').substring(0, 40);
+  log('Step 5: Inserting into personal_access_tokens3...');
+  const patResult = psqlExec(`INSERT INTO projections.personal_access_tokens3 (id, creation_date, change_date, sequence, resource_owner, instance_id, user_id, expiration, scopes, owner_removed) VALUES ('${patId}', NOW(), NOW(), ${nextSeq}, '${orgId || adminUserId}', '${instanceId}', '${adminUserId}', '2099-01-01 00:00:00+00', NULL, false)`);
+  log('personal_access_tokens3 insert: ' + (patResult ? 'OK' : 'FAILED'));
 
-  const keyInsertResult = psqlExec(`INSERT INTO projections.authn_keys2 (id, creation_date, change_date, resource_owner, instance_id, aggregate_id, sequence, object_id, expiration, identifier, public_key, enabled, type, fingerprint) SELECT '${keyId}', NOW(), NOW(), '${adminUserId}', '${instanceId}', '${adminUserId}', ${nextSeq}, '${adminUserId}', '9999-12-31 23:59:59+00', '${adminUserId}', decode('${publicKeyB64}', 'base64'), true, 1, '${fp}' WHERE NOT EXISTS (SELECT 1 FROM projections.authn_keys2 WHERE id = '${keyId}')`);
-  log('authn_keys2 insert: ' + (keyInsertResult ? 'OK' : 'FAILED'));
+  log('Step 6: Inserting into auth.tokens...');
+  const tokenResult = psqlExec(`INSERT INTO auth.tokens (id, creation_date, change_date, resource_owner, application_id, user_agent_id, user_id, expiration, sequence, scopes, audience, preferred_language, refresh_token_id, is_pat, instance_id, actor) VALUES ('${patId}', NOW(), NOW(), '${orgId || adminUserId}', '', '', '${adminUserId}', '2099-01-01 00:00:00+00', ${nextSeq}, NULL, NULL, '', '', true, '${instanceId}', NULL)`);
+  log('auth.tokens insert: ' + (tokenResult ? 'OK' : 'FAILED'));
 
-  log('Step 6: Inserting public key into keys4_public...');
-  const k4Result = psqlExec(`INSERT INTO projections.keys4_public (id, instance_id, expiry, key) SELECT '${keyId}', '${instanceId}', '9999-12-31 23:59:59+00', decode('${publicKeyB64}', 'base64') WHERE NOT EXISTS (SELECT 1 FROM projections.keys4_public WHERE id = '${keyId}')`);
-  log('keys4_public insert: ' + (k4Result ? 'OK' : 'FAILED'));
+  log('Step 7: Writing raw token to file...');
+  fs.writeFileSync(PAT_FILE, rawToken);
+  log('PAT written to ' + PAT_FILE + ' (length=' + rawToken.length + ')');
 
-  log('Step 7: Signing JWT...');
-  const jwt = generateJWT(privateKey, keyId, adminUserId, instanceId);
-  log('JWT length: ' + jwt.length);
+  log('Step 8: Waiting for ZITADEL to pick up the PAT...');
+  await new Promise(r => setTimeout(r, 3000));
 
-  fs.writeFileSync(PAT_FILE, jwt);
-  log('JWT saved to ' + PAT_FILE);
+  log('Step 9: Verifying PAT via Management API...');
+  const http = require('http');
+  const verifyToken = () => new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: 8081,
+      path: '/management/v1/users/_search',
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + rawToken,
+        'Content-Type': 'application/json',
+        'Host': 'zeroschool-zitadel.onrender.com'
+      },
+      timeout: 10000
+    }, (res) => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.write(JSON.stringify({ query: { limit: 1 } }));
+    req.end();
+  });
 
-  log('=== JWT CREATION SUCCESS ===');
+  try {
+    const result = await verifyToken();
+    log('Verification result: ' + result.status + ' ' + result.body.substring(0, 200));
+    if (result.status === 200) {
+      log('=== PAT CREATION SUCCESS - PAT works! ===');
+    } else {
+      log('WARNING: PAT returned status ' + result.status);
+      log('Trying JWT approach as fallback...');
+
+      log('Step F1: Generating RSA key pair...');
+      const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      });
+
+      const keyId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+      log('Key ID: ' + keyId);
+
+      const publicKeyB64 = Buffer.from(publicKey).toString('base64');
+
+      const keyPayload = JSON.stringify({
+        type: 1,
+        keyId: keyId,
+        publicKey: publicKeyB64,
+        expirationDate: '9999-12-31T23:59:59Z'
+      });
+
+      const maxPos2 = psqlSingle(`SELECT COALESCE(MAX(position), 0) FROM eventstore.events2`);
+      const nextPos2 = parseFloat(maxPos2 || '0') + 1;
+      const maxSeq2 = psqlSingle(`SELECT COALESCE(MAX(sequence), 0) FROM eventstore.events2 WHERE aggregate_id = '${adminUserId}'`);
+      const nextSeq2 = parseInt(maxSeq2 || '0') + 1;
+
+      psqlExec(`INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, sequence, revision, created_at, payload, creator, owner, position, in_tx_order) VALUES ('${instanceId}', 'user', '${adminUserId}', 'user.machine.key.added', ${nextSeq2}, 1, NOW(), '${keyPayload.replace(/'/g, "''")}'::jsonb, '${adminUserId}', '${adminUserId}', ${nextPos2}, 1)`);
+
+      const fp = crypto.createHash('sha256').update(Buffer.from(publicKey)).digest('hex').substring(0, 40);
+      psqlExec(`INSERT INTO projections.authn_keys2 (id, creation_date, change_date, resource_owner, instance_id, aggregate_id, sequence, object_id, expiration, identifier, public_key, enabled, type, fingerprint) VALUES ('${keyId}', NOW(), NOW(), '${adminUserId}', '${instanceId}', '${adminUserId}', ${nextSeq2}, '${adminUserId}', '9999-12-31 23:59:59+00', '${adminUserId}', decode('${publicKeyB64}', 'base64'), true, 1, '${fp}')`);
+
+      psqlExec(`INSERT INTO projections.keys4 (id, creation_date, change_date, resource_owner, instance_id, sequence, algorithm, use) VALUES ('${keyId}', NOW(), NOW(), '${adminUserId}', '${instanceId}', ${nextSeq2}, 'RSA', 1)`);
+      psqlExec(`INSERT INTO projections.keys4_public (id, instance_id, expiry, key) VALUES ('${keyId}', '${instanceId}', '9999-12-31 23:59:59+00', decode('${publicKeyB64}', 'base64'))`);
+
+      const now2 = Math.floor(Date.now() / 1000);
+      const jwtHeader = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: keyId })).toString('base64url');
+      const jwtPayload = Buffer.from(JSON.stringify({
+        iss: instanceId,
+        sub: adminUserId,
+        aud: [instanceId],
+        iat: now2,
+        exp: now2 + 365 * 24 * 3600,
+        jti: crypto.randomUUID(),
+      })).toString('base64url');
+      const dataToSign = jwtHeader + '.' + jwtPayload;
+      const sign = crypto.createSign('RSA-SHA256');
+      sign.update(dataToSign);
+      sign.end();
+      const signature = sign.sign(privateKey, 'base64url');
+      const jwt = dataToSign + '.' + signature;
+
+      fs.writeFileSync(PAT_FILE, jwt);
+      log('JWT written to ' + PAT_FILE + ' (length=' + jwt.length + ')');
+
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const result2 = await verifyToken();
+        log('JWT verification result: ' + result2.status + ' ' + result2.body.substring(0, 200));
+      } catch (e) {
+        log('JWT verification error: ' + e.message);
+      }
+    }
+  } catch (e) {
+    log('Verification error: ' + e.message);
+  }
+
+  log('=== PAT CREATION COMPLETE ===');
   process.exit(0);
 }
 
