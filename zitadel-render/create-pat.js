@@ -1,15 +1,14 @@
+const { execSync } = require('child_process');
 const fs = require('fs');
-const http = require('http');
 const crypto = require('crypto');
 
-const ZITADEL_URL = 'http://localhost:8081';
-const PROXY_URL = 'http://localhost:8080';
+const DB_HOST = 'dpg-da47aj2jobas73aeuag0-a';
+const DB_PORT = '5432';
+const DB_USER = 'zitadel_db_user';
+const DB_PASS = 'XaZKXwTcIiCchiEi317FvD30faT7m4vd';
+const DB_NAME = 'zitadel_db';
 const PAT_FILE = '/tmp/login-client.pat';
-const ADMIN_PAT_FILE = '/tmp/admin.pat';
 const STATUS_FILE = '/tmp/pat-creation-status.txt';
-const OIDC_CODE_FILE = '/tmp/oidc-auth-code.txt';
-const CLIENT_ID = '387549800423431157';
-const REDIRECT_URI = 'https://zeroschool-zitadel.onrender.com/ui/console/auth/callback';
 
 function log(msg) {
   const ts = new Date().toISOString();
@@ -21,216 +20,143 @@ function log(msg) {
   } catch (e) {}
 }
 
-function httpRequest(method, urlStr, body, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(urlStr);
-    const data = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
-    const opts = {
-      hostname: url.hostname,
-      port: url.port || 80,
-      path: url.pathname + url.search,
-      method,
-      headers: { ...headers },
-    };
-    if (data) {
-      opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/x-www-form-urlencoded';
-      opts.headers['Content-Length'] = Buffer.byteLength(data);
-    }
-    const req = http.request(opts, (res) => {
-      let b = '';
-      res.on('data', (c) => (b += c));
-      res.on('end', () => resolve({ status: res.statusCode, body: b, headers: res.headers }));
-    });
-    req.on('error', reject);
-    req.setTimeout(30000, () => { req.destroy(); reject(new Error('timeout')); });
-    if (data) req.write(data);
-    req.end();
-  });
+function psql(sql) {
+  try {
+    const safe = sql.replace(/'/g, "'\\''");
+    const cmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -t -A -c '${safe}'`;
+    return execSync(cmd, { timeout: 15000, encoding: 'utf8' }).trim();
+  } catch (e) {
+    log('psql error: ' + (e.stderr || e.message));
+    return null;
+  }
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function base64url(buf) {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+function psqlSingle(sql) {
+  const result = psql(sql);
+  if (!result) return null;
+  const lines = result.split('\n').filter(l => l.trim());
+  return lines.length > 0 ? lines[0] : null;
 }
 
-function generatePKCE() {
-  const verifier = base64url(crypto.randomBytes(32));
-  const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
-  return { verifier, challenge };
+function psqlExec(sql) {
+  try {
+    const safe = sql.replace(/'/g, "'\\''");
+    const cmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c '${safe}'`;
+    execSync(cmd, { timeout: 15000, encoding: 'utf8' });
+    return true;
+  } catch (e) {
+    log('psql exec error: ' + (e.stderr || e.message));
+    return false;
+  }
+}
+
+function generateJWT(privateKey, keyId, userId, instanceId) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT', kid: keyId };
+  const payload = {
+    iss: instanceId,
+    sub: userId,
+    aud: [instanceId],
+    iat: now,
+    exp: now + 365 * 24 * 3600,
+    jti: crypto.randomUUID(),
+  };
+
+  const enc = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+  const headerB64 = enc(header);
+  const payloadB64 = enc(payload);
+  const dataToSign = `${headerB64}.${payloadB64}`;
+
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(dataToSign);
+  sign.end();
+  const signature = sign.sign(privateKey, 'base64url');
+
+  return `${dataToSign}.${signature}`;
 }
 
 async function main() {
-  log('=== PAT Creation (v7 - Fixed Auth Code Flow) ===');
-
-  try { fs.unlinkSync(OIDC_CODE_FILE); } catch (e) {}
+  log('=== PAT Creation via JWT Machine Key ===');
 
   if (fs.existsSync(PAT_FILE)) {
     const existing = fs.readFileSync(PAT_FILE, 'utf8').trim();
-    if (existing && existing !== 'no-pat' && existing.length > 20) {
-      log('Login Client PAT already exists (length=' + existing.length + '), skipping.');
-      process.exit(0);
-    }
-  }
-
-  for (let i = 0; i < 40; i += 3) {
-    try {
-      const r = await httpRequest('GET', `${ZITADEL_URL}/debug/healthz`);
-      if (r.status === 200) { log('ZITADEL healthy'); break; }
-    } catch (e) {}
-    if (i >= 39) { log('ERROR: ZITADEL not healthy'); process.exit(1); }
-    await sleep(3000);
-  }
-
-  const { verifier, challenge } = generatePKCE();
-  log('PKCE verifier: ' + verifier);
-  log('PKCE challenge: ' + challenge);
-
-  const state = crypto.randomBytes(16).toString('hex');
-
-  log('Step 1: Starting OIDC authorization code flow...');
-  const authParams = new URLSearchParams({
-    client_id: CLIENT_ID,
-    response_type: 'code',
-    redirect_uri: REDIRECT_URI,
-    scope: 'openid profile email',
-    state: state,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-  }).toString();
-
-  const authUrl = `${PROXY_URL}/oauth/v2/authorize?${authParams}`;
-  log('Auth URL: ' + authUrl);
-
-  try {
-    const authRes = await httpRequest('GET', authUrl, null, {
-      'Host': 'zeroschool-zitadel.onrender.com',
-    }, 0);
-    log('Auth response: ' + authRes.status + ' ' + authRes.body.substring(0, 500));
-
-    if (authRes.status === 302 || authRes.status === 301) {
-      const location = authRes.headers.location;
-      log('Redirect to: ' + location);
-
-      if (location) {
-        const loginUrl = location.startsWith('http') ? location : `${PROXY_URL}${location}`;
-        log('Fetching login page: ' + loginUrl);
-
-        const loginRes = await httpRequest('GET', loginUrl, null, {
-          'Host': 'zeroschool-zitadel.onrender.com',
-        });
-        log('Login page status: ' + loginRes.status);
-        log('Login page length: ' + loginRes.body.length);
-
-        const html = loginRes.body;
-
-        const csrfMatch = html.match(/name="csrf"[^>]*value="([^"]*)"/i) ||
-                          html.match(/name="_csrf"[^>]*value="([^"]*)"/i) ||
-                          html.match(/"csrfToken":"([^"]*)"/i) ||
-                          html.match(/csrf_token[^"]*"([^"]*)"/i);
-        const csrfToken = csrfMatch ? csrfMatch[1] : null;
-        log('CSRF token: ' + (csrfToken || 'NOT FOUND'));
-
-        const actionMatch = html.match(/action="([^"]*)"/i);
-        const formAction = actionMatch ? actionMatch[1] : null;
-        log('Form action: ' + (formAction || 'NOT FOUND'));
-
-        const sessionMatch = html.match(/"sessionId":"([^"]*)"/i) || html.match(/name="sessionId"[^>]*value="([^"]*)"/i);
-        const sessionId = sessionMatch ? sessionMatch[1] : null;
-        log('Session ID: ' + sessionId);
-
-        log('HTML snippet (first 3000 chars):');
-        log(html.substring(0, 3000));
+    if (existing && existing !== 'no-pat' && existing.length > 50) {
+      const parts = existing.split('.');
+      if (parts.length === 3) {
+        log('Valid JWT already exists, skipping.');
+        process.exit(0);
       }
-    } else if (authRes.status === 200) {
-      log('Got 200 directly (might be login form)');
-      log('HTML snippet: ' + authRes.body.substring(0, 3000));
+      log('Existing PAT is not a JWT (length=' + existing.length + '), will create new one.');
     }
-  } catch (e) {
-    log('Auth flow error: ' + e.message);
   }
 
-  log('Step 2: Trying to create PAT via eventstore...');
-  try {
-    const adminUserId = '387549788495223797';
-    const loginClientUserId = '387549788495485941';
-    const instanceId = '387549788494633973';
-    const orgId = '387549788494699509';
-
-    log('Trying eventstore PAT creation for admin...');
-    const adminPat = execSync('head -c 32 /dev/urandom | base64 | tr -d "=+/" | head -c 40', { encoding: 'utf8' }).trim();
-    const adminPatHash = execSync(`echo -n "${adminPat}" | sha256sum | awk '{print $1}'`, { encoding: 'utf8' }).trim();
-    const patId = execSync('cat /proc/sys/kernel/random/uuid', { encoding: 'utf8' }).trim();
-    const now = new Date().toISOString();
-
-    // Insert PAT event into eventstore
-    const eventUuid = execSync('cat /proc/sys/kernel/random/uuid', { encoding: 'utf8' }).trim();
-    const seq = Math.floor(Math.random() * 1000000) + 1000000;
-    const payload = JSON.stringify({
-      tokenID: patId,
-      name: 'admin-pat',
-      expirationDate: '2099-01-01T00:00:00Z',
-      hashedToken: adminPatHash,
-      userID: adminUserId,
-      accessTokenType: 0
-    }).replace(/'/g, "''");
-
-    const sql = `INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, "sequence", revision, created_at, payload, creator, owner, position) VALUES ('${instanceId}', 'user', '${adminUserId}', 'user.pat.added', ${seq}, 1, '${now}', '${payload}'::jsonb, '${adminUserId}', '${orgId}', 0)`;
-    log('Inserting PAT event...');
-    const result = execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${sql}"`, { timeout: 15000, encoding: 'utf8' }).trim();
-    log('Event insert result: ' + result);
-
-    // Also insert projection
-    const projSql = `INSERT INTO projections.personal_access_tokens3 (id, creation_date, change_date, sequence, resource_owner, instance_id, user_id, expiration, scopes, owner_removed) VALUES ('${patId}', '${now}', '${now}', 1, '${orgId}', '${instanceId}', '${adminUserId}', '2099-01-01T00:00:00Z', '{}', false)`;
-    const projResult = execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${projSql}"`, { timeout: 15000, encoding: 'utf8' }).trim();
-    log('Projection insert result: ' + projResult);
-
-    fs.writeFileSync(ADMIN_PAT_FILE, adminPat);
-    log('Admin PAT written to file (length=' + adminPat.length + ')');
-
-    // Now do the same for login-client
-    const loginPat = execSync('head -c 32 /dev/urandom | base64 | tr -d "=+/" | head -c 40', { encoding: 'utf8' }).trim();
-    const loginPatHash = execSync(`echo -n "${loginPat}" | sha256sum | awk '{print $1}'`, { encoding: 'utf8' }).trim();
-    const loginPatId = execSync('cat /proc/sys/kernel/random/uuid', { encoding: 'utf8' }).trim();
-
-    const payload2 = JSON.stringify({
-      tokenID: loginPatId,
-      name: 'login-client-pat',
-      expirationDate: '2099-01-01T00:00:00Z',
-      hashedToken: loginPatHash,
-      userID: loginClientUserId,
-      accessTokenType: 0
-    }).replace(/'/g, "''");
-
-    const sql2 = `INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, "sequence", revision, created_at, payload, creator, owner, position) VALUES ('${instanceId}', 'user', '${loginClientUserId}', 'user.pat.added', ${seq + 1}, 1, '${now}', '${payload2}'::jsonb, '${loginClientUserId}', '${orgId}', 0)`;
-    execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${sql2}"`, { timeout: 15000, encoding: 'utf8' });
-
-    const projSql2 = `INSERT INTO projections.personal_access_tokens3 (id, creation_date, change_date, sequence, resource_owner, instance_id, user_id, expiration, scopes, owner_removed) VALUES ('${loginPatId}', '${now}', '${now}', 1, '${orgId}', '${instanceId}', '${loginClientUserId}', '2099-01-01T00:00:00Z', '{}', false)`;
-    execSync(`PGPASSWORD='XaZKXwTcIiCchiEi317FvD30faT7m4vd' psql -h dpg-da47aj2jobas73aeuag0-a -p 5432 -U zitadel_db_user -d zitadel_db -c "${projSql2}"`, { timeout: 15000, encoding: 'utf8' });
-
-    fs.writeFileSync(PAT_FILE, loginPat);
-    log('Login Client PAT written to file (length=' + loginPat.length + ')');
-
-    // Wait for ZITADEL to pick up the new PATs
-    log('Waiting for ZITADEL to process new PATs...');
-    await sleep(5000);
-
-    // Verify by calling Management API
-    const testRes = await httpRequest('POST', `${ZITADEL_URL}/management/v1/users/_search`, {
-      queries: []
-    }, { 'Authorization': 'Bearer ' + loginPat });
-    log('Management API test with login PAT: ' + testRes.status + ' ' + testRes.body.substring(0, 300));
-
-    if (testRes.status === 200 || testRes.status === 403) {
-      log('SUCCESS: PAT appears to be working!');
-      process.exit(0);
-    }
-  } catch (e) {
-    log('Eventstore PAT creation error: ' + e.message);
+  log('Step 1: Finding admin user ID...');
+  const adminUserId = psqlSingle(`SELECT id FROM projections.users14 WHERE username = 'admin' AND type = 2 LIMIT 1`);
+  if (!adminUserId) {
+    log('ERROR: Could not find admin machine user');
+    const allUsers = psql(`SELECT id,username,type FROM projections.users14`);
+    log('All users: ' + (allUsers || 'none'));
+    process.exit(1);
   }
+  log('Admin user ID: ' + adminUserId);
 
-  log('ERROR: All methods failed');
-  process.exit(1);
+  const instanceId = psqlSingle(`SELECT id FROM projections.instances LIMIT 1`);
+  if (!instanceId) {
+    log('ERROR: Could not find instance ID');
+    process.exit(1);
+  }
+  log('Instance ID: ' + instanceId);
+
+  log('Step 2: Generating RSA key pair...');
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+
+  const keyId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+  log('Key ID: ' + keyId);
+
+  log('Step 3: Getting max sequence for user...');
+  const maxSeq = psqlSingle(`SELECT COALESCE(MAX(sequence), 0) FROM eventstore.events2 WHERE aggregate_id = '${adminUserId}'`);
+  const nextSeq = parseInt(maxSeq || '0') + 1;
+  log('Next sequence: ' + nextSeq);
+
+  log('Step 4: Inserting machine key event...');
+  const publicKeyB64 = Buffer.from(publicKey).toString('base64');
+
+  const keyPayload = JSON.stringify({
+    type: 1,
+    keyId: keyId,
+    publicKey: publicKeyB64,
+    expirationDate: '9999-12-31T23:59:59Z'
+  });
+
+  const maxPos = psqlSingle(`SELECT COALESCE(MAX(position), 0) FROM eventstore.events2`);
+  const nextPos = parseFloat(maxPos || '0') + 1;
+
+  const evResult = psqlExec(`INSERT INTO eventstore.events2 (instance_id, aggregate_type, aggregate_id, event_type, sequence, revision, created_at, payload, creator, owner, position, in_tx_order) VALUES ('${instanceId}', 'user', '${adminUserId}', 'user.machine.key.added', ${nextSeq}, 1, NOW(), '${keyPayload.replace(/'/g, "''")}'::jsonb, '${adminUserId}', '${adminUserId}', ${nextPos}, 1)`);
+  log('Event insert: ' + (evResult ? 'OK' : 'FAILED'));
+
+  log('Step 5: Inserting public key into authn_keys2...');
+  const fp = crypto.createHash('sha256').update(Buffer.from(publicKey)).digest('hex').substring(0, 40);
+
+  const keyInsertResult = psqlExec(`INSERT INTO projections.authn_keys2 (id, creation_date, change_date, resource_owner, instance_id, aggregate_id, sequence, object_id, expiration, identifier, public_key, enabled, type, fingerprint) VALUES ('${keyId}', NOW(), NOW(), '${adminUserId}', '${instanceId}', '${adminUserId}', ${nextSeq}, '${adminUserId}', '9999-12-31 23:59:59+00', '${adminUserId}', decode('${publicKeyB64}', 'base64'), true, 1, '${fp}') ON CONFLICT (id) DO UPDATE SET public_key = decode('${publicKeyB64}', 'base64'), enabled = true`);
+  log('authn_keys2 insert: ' + (keyInsertResult ? 'OK' : 'FAILED'));
+
+  log('Step 6: Inserting public key into keys4_public...');
+  const k4Result = psqlExec(`INSERT INTO projections.keys4_public (id, instance_id, expiry, key) VALUES ('${keyId}', '${instanceId}', '9999-12-31 23:59:59+00', decode('${publicKeyB64}', 'base64')) ON CONFLICT (id) DO UPDATE SET key = decode('${publicKeyB64}', 'base64')`);
+  log('keys4_public insert: ' + (k4Result ? 'OK' : 'FAILED'));
+
+  log('Step 7: Signing JWT...');
+  const jwt = generateJWT(privateKey, keyId, adminUserId, instanceId);
+  log('JWT length: ' + jwt.length);
+
+  fs.writeFileSync(PAT_FILE, jwt);
+  log('JWT saved to ' + PAT_FILE);
+
+  log('=== JWT CREATION SUCCESS ===');
+  process.exit(0);
 }
 
 main().catch(err => { log('FATAL: ' + err.message); process.exit(1); });
