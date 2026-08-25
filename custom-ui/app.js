@@ -61,6 +61,12 @@ const ZITADEL_INTERNAL = process.env.ZITADEL_INTERNAL || 'http://zitadel:8080';
 const PAT_FILE = process.env.PAT_FILE || '/zitadel/bootstrap/admin.pat';
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || '387166122471849987';
 
+// Users log in with their email address, so the ZITADEL username and the email
+// are the same value. LEGACY_USER_DOMAIN is only kept so accounts created
+// before this change can still sign in.
+const USER_DOMAIN = process.env.USER_DOMAIN || 'zeroschool.org';
+const LEGACY_USER_DOMAIN = 'zeroschool.localhost';
+
 const SCHOOLS = [
   { id: 'sch001', name: 'ZeroSchool Primary' },
   { id: 'sch002', name: 'ZeroSchool Secondary' },
@@ -150,8 +156,8 @@ function generateTeacherBaseEmail(firstName, lastName, schoolId) {
 
 async function tryCreateStudent(firstName, lastName, className, schoolId, phone, password, loginName) {
   const school = SCHOOLS.find(s => s.id === schoolId);
-  const username = loginName + '@zeroschool.localhost';
-  const email = loginName + '@zeroschool.org';
+  const username = loginName + '@' + USER_DOMAIN;
+  const email = loginName + '@' + USER_DOMAIN;
   const payload = {
     username,
     profile: { givenName: firstName, familyName: lastName || '', displayName: `${firstName} ${lastName || ''}`.trim() },
@@ -247,18 +253,27 @@ app.post('/api/login', async (req, res) => {
 
     const role = detectRole(req.headers.host);
     const shortName = loginName.split('@')[0];
-    const domainLoginName = shortName + '@zeroschool.localhost';
+    const primaryLoginName = shortName + '@' + USER_DOMAIN;
 
-    let resp;
-    try {
-      resp = await axios.post(`${ZITADEL_INTERNAL}/v2/sessions`, {
-        checks: { user: { loginName: domainLoginName }, password: { password } }
-      }, { headers: zitadelHeaders() });
-    } catch (firstErr) {
-      resp = await axios.post(`${ZITADEL_INTERNAL}/v2/sessions`, {
-        checks: { user: { loginName: shortName }, password: { password } }
-      }, { headers: zitadelHeaders() });
+    // Whatever the user types, try the current form first, then the legacy
+    // .localhost form (accounts created before the domain change), then the
+    // bare username. Keep the first error so a genuine bad-password isn't
+    // masked by a later "user not found".
+    const attempts = [primaryLoginName, shortName + '@' + LEGACY_USER_DOMAIN, shortName];
+    let resp = null;
+    let firstErr = null;
+    for (const candidate of attempts) {
+      try {
+        resp = await axios.post(`${ZITADEL_INTERNAL}/v2/sessions`, {
+          checks: { user: { loginName: candidate }, password: { password } }
+        }, { headers: zitadelHeaders() });
+        break;
+      } catch (err) {
+        if (!firstErr) firstErr = err;
+        if (isAuthError(err)) throw err;
+      }
     }
+    if (!resp) throw firstErr;
 
     const sessionToken = resp.data.sessionToken;
     const sessionId = resp.data.sessionId;
@@ -269,7 +284,7 @@ app.post('/api/login', async (req, res) => {
     req.session.user = {
       userId: resp.data.details?.resourceOwner || '',
       sessionId, sessionToken,
-      loginName: factors.user?.loginName || domainLoginName,
+      loginName: factors.user?.loginName || primaryLoginName,
       role,
       displayName: factors.user?.displayName || shortName,
     };
@@ -362,13 +377,13 @@ app.post('/api/register/teacher', async (req, res) => {
 
     let created = null;
     for (const loginName of candidates) {
-      const username = loginName + '@zeroschool.localhost';
+      const username = loginName + '@' + USER_DOMAIN;
       try {
         await axios.post(`${ZITADEL_INTERNAL}/v2/users/human`, {
           username,
           profile: { givenName: firstName, familyName: lastName, displayName: `${firstName} ${lastName}` },
-      email: { email: loginName + '@zeroschool.org', isVerified: true },
-      phone: normalizePhone(phone) ? { phone: normalizePhone(phone), isVerified: true } : undefined,
+          email: { email: loginName + '@' + USER_DOMAIN, isVerified: true },
+          phone: normalizePhone(phone) ? { phone: normalizePhone(phone), isVerified: true } : undefined,
           password: { password, changeRequired: false },
           metadata: [
             { key: 'role', value: Buffer.from('teacher').toString('base64') },
@@ -376,7 +391,7 @@ app.post('/api/register/teacher', async (req, res) => {
             { key: 'school_name', value: Buffer.from(school ? school.name : schoolId).toString('base64') },
           ],
         }, { headers: zitadelHeaders() });
-        created = { loginName, email: loginName + '@zeroschool.org', username };
+        created = { loginName, email: loginName + '@' + USER_DOMAIN, username };
         break;
       } catch (err) {
         const msg = err.response?.data?.message || '';
