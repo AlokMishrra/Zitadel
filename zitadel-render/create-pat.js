@@ -83,10 +83,22 @@ async function main() {
     if (existing && existing !== 'no-pat' && existing.length > 50) {
       const parts = existing.split('.');
       if (parts.length === 3) {
-        log('Valid JWT already exists, skipping.');
-        process.exit(0);
+        try {
+          const headerJson = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+          const kid = headerJson.kid;
+          log('Existing JWT has kid: ' + kid);
+          const keyExists = psqlSingle(`SELECT id FROM projections.authn_keys2 WHERE id = '${kid}' AND enabled = true`);
+          if (keyExists) {
+            log('Key ' + kid + ' found in authn_keys2, JWT is valid.');
+            process.exit(0);
+          }
+          log('Key ' + kid + ' NOT found in authn_keys2, creating new JWT...');
+        } catch (e) {
+          log('Error validating existing JWT: ' + e.message + ', creating new one...');
+        }
+      } else {
+        log('Existing PAT is not a JWT (length=' + existing.length + '), will create new one.');
       }
-      log('Existing PAT is not a JWT (length=' + existing.length + '), will create new one.');
     }
   }
 
@@ -141,11 +153,11 @@ async function main() {
   log('Step 5: Inserting public key into authn_keys2...');
   const fp = crypto.createHash('sha256').update(Buffer.from(publicKey)).digest('hex').substring(0, 40);
 
-  const keyInsertResult = psqlExec(`INSERT INTO projections.authn_keys2 (id, creation_date, change_date, resource_owner, instance_id, aggregate_id, sequence, object_id, expiration, identifier, public_key, enabled, type, fingerprint) VALUES ('${keyId}', NOW(), NOW(), '${adminUserId}', '${instanceId}', '${adminUserId}', ${nextSeq}, '${adminUserId}', '9999-12-31 23:59:59+00', '${adminUserId}', decode('${publicKeyB64}', 'base64'), true, 1, '${fp}') ON CONFLICT (id) DO UPDATE SET public_key = decode('${publicKeyB64}', 'base64'), enabled = true`);
+  const keyInsertResult = psqlExec(`INSERT INTO projections.authn_keys2 (id, creation_date, change_date, resource_owner, instance_id, aggregate_id, sequence, object_id, expiration, identifier, public_key, enabled, type, fingerprint) SELECT '${keyId}', NOW(), NOW(), '${adminUserId}', '${instanceId}', '${adminUserId}', ${nextSeq}, '${adminUserId}', '9999-12-31 23:59:59+00', '${adminUserId}', decode('${publicKeyB64}', 'base64'), true, 1, '${fp}' WHERE NOT EXISTS (SELECT 1 FROM projections.authn_keys2 WHERE id = '${keyId}')`);
   log('authn_keys2 insert: ' + (keyInsertResult ? 'OK' : 'FAILED'));
 
   log('Step 6: Inserting public key into keys4_public...');
-  const k4Result = psqlExec(`INSERT INTO projections.keys4_public (id, instance_id, expiry, key) VALUES ('${keyId}', '${instanceId}', '9999-12-31 23:59:59+00', decode('${publicKeyB64}', 'base64')) ON CONFLICT (id) DO UPDATE SET key = decode('${publicKeyB64}', 'base64')`);
+  const k4Result = psqlExec(`INSERT INTO projections.keys4_public (id, instance_id, expiry, key) SELECT '${keyId}', '${instanceId}', '9999-12-31 23:59:59+00', decode('${publicKeyB64}', 'base64') WHERE NOT EXISTS (SELECT 1 FROM projections.keys4_public WHERE id = '${keyId}')`);
   log('keys4_public insert: ' + (k4Result ? 'OK' : 'FAILED'));
 
   log('Step 7: Signing JWT...');

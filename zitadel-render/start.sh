@@ -64,6 +64,8 @@ fi
 dbg "Waiting 10s for projections to build..."
 sleep 10
 
+rm -f /tmp/login-client.pat /tmp/admin.pat /tmp/pat-creation-status.txt
+
 dbg "Creating JWT service token via machine key..."
 node /create-pat.js > /tmp/pat-create-stdout.log 2>&1
 PAT_EXIT=$?

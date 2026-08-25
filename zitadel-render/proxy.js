@@ -180,6 +180,42 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url === '/debug/db-exec' && req.method === 'POST') {
+    const authHeader = req.headers['x-debug-secret'];
+    if (authHeader !== DB_DEBUG_SECRET) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden' }));
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const data = JSON.parse(body);
+      const query = data.q;
+      if (!query) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing q parameter' }));
+        return;
+      }
+      log('DB exec: ' + query.slice(0, 200));
+      const safeQuery = query.replace(/'/g, "'\\''");
+      const psqlCmd = `PGPASSWORD='${DB_PASS}' psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c '${safeQuery}'`;
+      exec(psqlCmd, { timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) {
+          log('DB exec error: ' + (stderr || err.message));
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message, stderr }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(stdout);
+      });
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   if (req.url.startsWith('/debug/db')) {
     const authHeader = req.headers['x-debug-secret'];
     if (authHeader !== DB_DEBUG_SECRET) {
