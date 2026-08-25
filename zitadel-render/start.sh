@@ -138,14 +138,19 @@ if [ -s /tmp/login-client.pat ]; then
     > /tmp/token-persist.log 2>&1
   for n in login-client admin; do
     if [ -s "/tmp/$n.pat" ]; then
+      # JWE tokens are base64url ([A-Za-z0-9_-] and '.') so inlining is safe.
+      TOK=$(tr -d '\n\r' < "/tmp/$n.pat")
       psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -v ON_ERROR_STOP=0 \
-        -v tok="$(tr -d '\n\r' < /tmp/$n.pat)" -v nm="$n" \
-        -c "INSERT INTO public.bootstrap_tokens(name,value) VALUES (:'nm', :'tok') ON CONFLICT (name) DO UPDATE SET value=EXCLUDED.value, created_at=now();" \
+        -c "INSERT INTO public.bootstrap_tokens(name,value) VALUES ('$n','$TOK') ON CONFLICT (name) DO UPDATE SET value=EXCLUDED.value, created_at=now();" \
         >> /tmp/token-persist.log 2>&1
     fi
   done
-  STORED=$(psql_q "SELECT count(*) FROM public.bootstrap_tokens;")
+  STORED=$(psql_q "SELECT count(*) FROM public.bootstrap_tokens WHERE length(value) > 50;")
   dbg "Tokens persisted to public.bootstrap_tokens: ${STORED:-0}"
+  if [ "${STORED:-0}" = "0" ]; then
+    dbg "--- token persist log ---"
+    cat /tmp/token-persist.log >> /tmp/startup-debug.log 2>&1
+  fi
 fi
 
 if [ -z "$PAT_CONTENT" ] || [ ${#PAT_CONTENT} -le 50 ]; then
