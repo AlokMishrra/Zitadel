@@ -175,8 +175,37 @@ async function tryCreateStudent(firstName, lastName, className, schoolId, phone,
   return { loginName, email, username };
 }
 
+async function tryCreateTeacher(firstName, lastName, schoolId, phone, password, loginName) {
+  const school = SCHOOLS.find(s => s.id === schoolId);
+  const username = loginName + '@' + USER_DOMAIN;
+  const email = loginName + '@' + USER_DOMAIN;
+  const payload = {
+    username,
+    profile: { givenName: firstName, familyName: lastName || '', displayName: `${firstName} ${lastName || ''}`.trim() },
+    email: { email, isVerified: true },
+    phone: normalizePhone(phone) ? { phone: normalizePhone(phone), isVerified: true } : undefined,
+    password: { password, changeRequired: false },
+    metadata: [
+      { key: 'role', value: Buffer.from('teacher').toString('base64') },
+      { key: 'school_id', value: Buffer.from(schoolId).toString('base64') },
+      { key: 'school_name', value: Buffer.from(school ? school.name : schoolId).toString('base64') },
+    ],
+  };
+  await axios.post(`${ZITADEL_INTERNAL}/v2/users/human`, payload, { headers: zitadelHeaders() });
+  return { loginName, email, username };
+}
+
 function generateEmailCandidates(firstName, className, schoolId, phone) {
   const base = generateBaseEmail(firstName, className, schoolId);
+  return withUniquenessSuffixes(base, phone);
+}
+
+function generateTeacherEmailCandidates(firstName, lastName, schoolId, phone) {
+  const base = generateTeacherBaseEmail(firstName, lastName, schoolId);
+  return withUniquenessSuffixes(base, phone);
+}
+
+function withUniquenessSuffixes(base, phone) {
   const candidates = [base];
   const phoneLast4 = phone ? String(phone).replace(/\D/g, '').slice(-4) : null;
   if (phoneLast4 && phoneLast4.length === 4) candidates.push(base + phoneLast4);
@@ -368,38 +397,32 @@ app.post('/api/register/teacher', async (req, res) => {
     if (!firstName || !lastName || !schoolId || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
-    const school = SCHOOLS.find(s => s.id === schoolId);
-    const base = generateTeacherBaseEmail(firstName, lastName, schoolId);
-    const candidates = [base];
-    const phoneLast4 = phone ? String(phone).replace(/\D/g, '').slice(-4) : null;
-    if (phoneLast4 && phoneLast4.length === 4) candidates.push(base + phoneLast4);
-    for (let i = 1; i <= 99; i++) candidates.push(base + String(i).padStart(2, '0'));
+    const candidates = generateTeacherEmailCandidates(firstName, lastName, schoolId, phone);
 
     let created = null;
+    let retriedAuth = false;
     for (const loginName of candidates) {
-      const username = loginName + '@' + USER_DOMAIN;
       try {
-        await axios.post(`${ZITADEL_INTERNAL}/v2/users/human`, {
-          username,
-          profile: { givenName: firstName, familyName: lastName, displayName: `${firstName} ${lastName}` },
-          email: { email: loginName + '@' + USER_DOMAIN, isVerified: true },
-          phone: normalizePhone(phone) ? { phone: normalizePhone(phone), isVerified: true } : undefined,
-          password: { password, changeRequired: false },
-          metadata: [
-            { key: 'role', value: Buffer.from('teacher').toString('base64') },
-            { key: 'school_id', value: Buffer.from(schoolId).toString('base64') },
-            { key: 'school_name', value: Buffer.from(school ? school.name : schoolId).toString('base64') },
-          ],
-        }, { headers: zitadelHeaders() });
-        created = { loginName, email: loginName + '@' + USER_DOMAIN, username };
+        created = await tryCreateTeacher(firstName, lastName, schoolId, phone, password, loginName);
         break;
       } catch (err) {
+        if (isAuthError(err) && !retriedAuth) {
+          retriedAuth = true;
+          invalidatePAT();
+          try {
+            created = await tryCreateTeacher(firstName, lastName, schoolId, phone, password, loginName);
+            break;
+          } catch (err2) {
+            if (isAuthError(err2)) throw err2;
+            err = err2;
+          }
+        }
         const msg = err.response?.data?.message || '';
         if (msg.includes('already exists') || msg.includes('V3-') || msg.includes('Username') || msg.includes('UNIQUE')) continue;
         throw err;
       }
     }
-    if (!created) return res.status(500).json({ error: 'Could not generate unique username' });
+    if (!created) return res.status(409).json({ error: 'Could not generate a unique username for this teacher' });
 
     const sessionResp = await axios.post(`${ZITADEL_INTERNAL}/v2/sessions`, {
       checks: { user: { loginName: created.username }, password: { password } }
@@ -432,6 +455,11 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
 
     if (rows.length === 0) return res.status(400).json({ error: 'Empty file' });
 
+    // Default role for rows that don't carry their own "Role" column. Lets you
+    // upload a teacher-only sheet without adding a Role column to every row.
+    const defaultRole = String(req.body?.role || req.query?.role || 'student').trim().toLowerCase() === 'teacher'
+      ? 'teacher' : 'student';
+
     const results = [];
     let successCount = 0;
     let failCount = 0;
@@ -442,9 +470,20 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
       const className = (row.Class || row.className || row['Class'] || '').toString().trim();
       const schoolId = (row.School || row.schoolId || row['School'] || row.SchoolID || '').toString().trim();
       const phone = (row.Phone || row.phone || row['Phone'] || row.Mobile || row.mobile || '').toString().trim();
+      const rawRole = (row.Role || row.role || row['Role'] || '').toString().trim().toLowerCase();
+      const role = rawRole === 'teacher' ? 'teacher' : (rawRole === 'student' ? 'student' : defaultRole);
 
-      if (!firstName || !className || !schoolId) {
-        results.push({ firstName, lastName, className, schoolId, status: 'FAILED', error: 'Missing required fields (FirstName, Class, School)' });
+      // Teachers have no class; they need a last name to build a unique login.
+      const missing = [];
+      if (!firstName) missing.push('FirstName');
+      if (!schoolId) missing.push('School');
+      if (role === 'teacher') {
+        if (!lastName) missing.push('LastName');
+      } else {
+        if (!className) missing.push('Class');
+      }
+      if (missing.length) {
+        results.push({ role, firstName, lastName, className, schoolId, phone, status: 'FAILED', error: 'Missing required fields: ' + missing.join(', ') });
         failCount++;
         continue;
       }
@@ -453,18 +492,30 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
         s.id === schoolId || s.name.toLowerCase().includes(schoolId.toLowerCase())
       );
       const resolvedSchoolId = matchedSchool ? matchedSchool.id : schoolId;
-      const school = matchedSchool || { name: schoolId };
 
       const password = generatePassword();
 
       try {
-        const candidates = generateEmailCandidates(firstName, className, resolvedSchoolId, phone);
+        const candidates = role === 'teacher'
+          ? generateTeacherEmailCandidates(firstName, lastName, resolvedSchoolId, phone)
+          : generateEmailCandidates(firstName, className, resolvedSchoolId, phone);
         let created = null;
+        let retriedAuth = false;
         for (const loginName of candidates) {
           try {
-            created = await tryCreateStudent(firstName, lastName, className, resolvedSchoolId, phone, password, loginName);
+            created = role === 'teacher'
+              ? await tryCreateTeacher(firstName, lastName, resolvedSchoolId, phone, password, loginName)
+              : await tryCreateStudent(firstName, lastName, className, resolvedSchoolId, phone, password, loginName);
             break;
           } catch (retryErr) {
+            // A rejected service token is not a username collision - stop
+            // instead of burning through all 101 candidates.
+            if (isAuthError(retryErr)) {
+              if (retriedAuth) throw retryErr;
+              retriedAuth = true;
+              invalidatePAT();
+              continue;
+            }
             const rmsg = retryErr.response?.data?.message || '';
             if (rmsg.includes('already exists') || rmsg.includes('V3-') || rmsg.includes('Username') || rmsg.includes('UNIQUE')) continue;
             throw retryErr;
@@ -473,13 +524,16 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
         if (!created) throw new Error('Could not generate unique username');
 
         results.push({
-          firstName, lastName, className, schoolId: resolvedSchoolId, phone,
+          role, firstName, lastName, className: role === 'teacher' ? '' : className,
+          schoolId: resolvedSchoolId, phone,
           email: created.email, username: created.loginName, password, status: 'SUCCESS'
         });
         successCount++;
       } catch (err) {
-        const errMsg = err.response?.data?.message || err.message;
-        results.push({ firstName, lastName, className, schoolId: resolvedSchoolId, phone, status: 'FAILED', error: errMsg });
+        const errMsg = isAuthError(err)
+          ? 'ZITADEL rejected the service token (check ZITADEL_PAT)'
+          : (err.response?.data?.message || err.message);
+        results.push({ role, firstName, lastName, className, schoolId: resolvedSchoolId, phone, status: 'FAILED', error: errMsg });
         failCount++;
       }
     }
@@ -488,6 +542,7 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
 
     const outWb = XLSX.utils.book_new();
     const outData = results.map(r => ({
+      'Role': r.role,
       'First Name': r.firstName,
       'Last Name': r.lastName,
       'Class': r.className,
@@ -500,7 +555,10 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
       'Error': r.error || ''
     }));
     const outSheet = XLSX.utils.json_to_sheet(outData);
-    XLSX.utils.book_append_sheet(outWb, outSheet, 'Students');
+    const hasTeachers = results.some(r => r.role === 'teacher');
+    const hasStudents = results.some(r => r.role === 'student');
+    const sheetName = hasTeachers && !hasStudents ? 'Teachers' : (hasTeachers ? 'Users' : 'Students');
+    XLSX.utils.book_append_sheet(outWb, outSheet, sheetName);
     const outPath = path.join(__dirname, 'uploads', `bulk-result-${Date.now()}.xlsx`);
     XLSX.writeFile(outWb, outPath);
 
@@ -509,6 +567,8 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
       total: rows.length,
       created: successCount,
       failed: failCount,
+      teachers: results.filter(r => r.role === 'teacher' && r.status === 'SUCCESS').length,
+      students: results.filter(r => r.role === 'student' && r.status === 'SUCCESS').length,
       downloadUrl: `/api/bulk-download/${path.basename(outPath)}`,
       results
     });
@@ -537,6 +597,27 @@ app.get('/api/me', (req, res) => {
 
 app.get('/logout', (req, res) => {
   req.session.destroy(() => { res.redirect('/login'); });
+});
+
+app.get('/api/bulk-template', (req, res) => {
+  const wantTeacher = String(req.query.role || '').trim().toLowerCase() === 'teacher';
+  const wb = XLSX.utils.book_new();
+  const rows = wantTeacher
+    ? [
+        { Role: 'teacher', FirstName: 'Anita', LastName: 'Sharma', Class: '', School: 'sch001', Phone: '9876543210' },
+        { Role: 'teacher', FirstName: 'Ravi', LastName: 'Kumar', Class: '', School: 'sch002', Phone: '9876543211' },
+      ]
+    : [
+        { Role: 'student', FirstName: 'Aarav', LastName: 'Patil', Class: '11', School: 'sch001', Phone: '9876543210' },
+        { Role: 'teacher', FirstName: 'Anita', LastName: 'Sharma', Class: '', School: 'sch001', Phone: '9876543211' },
+      ];
+  const sheet = XLSX.utils.json_to_sheet(rows, { header: ['Role', 'FirstName', 'LastName', 'Class', 'School', 'Phone'] });
+  XLSX.utils.book_append_sheet(wb, sheet, wantTeacher ? 'Teachers' : 'Users');
+  const out = path.join(__dirname, 'uploads', `template-${Date.now()}.xlsx`);
+  XLSX.writeFile(wb, out);
+  res.download(out, wantTeacher ? 'ZeroSchool-Teacher-Template.xlsx' : 'ZeroSchool-Bulk-Template.xlsx', () => {
+    try { fs.unlinkSync(out); } catch (e) {}
+  });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
