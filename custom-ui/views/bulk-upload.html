@@ -113,11 +113,18 @@
     <div class="card">
       <div id="uploadSection">
         <h3 style="margin-bottom: 8px; color: #e2e8f0;">Upload File</h3>
-        <p style="font-size: 0.85rem; color: #a0aec0; margin-bottom: 16px;">
-          Required columns: <strong>FirstName</strong>, <strong>Class</strong>, <strong>School</strong><br>
-          Optional: <strong>LastName</strong>, <strong>Phone</strong> (or Mobile)
-          <br><span class="template-link" onclick="downloadTemplate()">Download template Excel</span>
-        </p>
+
+        <div style="margin-bottom: 14px;">
+          <label style="display:block; font-size:0.75rem; letter-spacing:0.05em; text-transform:uppercase; color:#a0aec0; margin-bottom:6px;">Account type</label>
+          <select id="roleSelect" onchange="onRoleChanged()"
+                  style="width:100%; padding:10px 12px; border-radius:8px; background:#1a202c; color:#e2e8f0; border:1px solid #2d3748; font-size:0.95rem;">
+            <option value="student">Students</option>
+            <option value="teacher">Teachers</option>
+            <option value="mixed">Mixed &mdash; use a Role column in the file</option>
+          </select>
+        </div>
+
+        <p style="font-size: 0.85rem; color: #a0aec0; margin-bottom: 16px;" id="columnHint"></p>
 
         <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="1.5">
@@ -165,6 +172,7 @@
           <table class="results-table">
             <thead>
               <tr>
+                <th>Role</th>
                 <th>Name</th>
                 <th>Class</th>
                 <th>School</th>
@@ -211,8 +219,11 @@
 
     async function uploadFile() {
       if (!fileInput.files.length) return;
+      const role = document.getElementById('roleSelect').value;
       const formData = new FormData();
       formData.append('file', fileInput.files[0]);
+      // 'mixed' sends no default, so each row's own Role column decides.
+      if (role !== 'mixed') formData.append('role', role);
 
       uploadBtn.disabled = true;
       document.getElementById('progressBar').style.display = 'block';
@@ -243,6 +254,7 @@
         for (const r of data.results) {
           const tr = document.createElement('tr');
           tr.innerHTML = `
+            <td>${r.role || ''}</td>
             <td>${r.firstName || ''} ${r.lastName || ''}</td>
             <td>${r.className || ''}</td>
             <td>${r.schoolId || ''}</td>
@@ -269,16 +281,56 @@
       uploadBtn.disabled = true;
     }
 
+    function onRoleChanged() {
+      const role = document.getElementById('roleSelect').value;
+      const hint = document.getElementById('columnHint');
+      if (role === 'teacher') {
+        hint.innerHTML = 'Required columns: <strong>FirstName</strong>, <strong>LastName</strong>, <strong>School</strong><br>' +
+          'Optional: <strong>Phone</strong> (or Mobile). <strong>Class</strong> is ignored for teachers.' +
+          '<br><span class="template-link" onclick="downloadTemplate()">Download template Excel</span>';
+      } else if (role === 'mixed') {
+        hint.innerHTML = 'Add a <strong>Role</strong> column with <strong>student</strong> or <strong>teacher</strong> per row.<br>' +
+          'Students need <strong>FirstName</strong>, <strong>Class</strong>, <strong>School</strong>. ' +
+          'Teachers need <strong>FirstName</strong>, <strong>LastName</strong>, <strong>School</strong>.' +
+          '<br><span class="template-link" onclick="downloadTemplate()">Download template Excel</span>';
+      } else {
+        hint.innerHTML = 'Required columns: <strong>FirstName</strong>, <strong>Class</strong>, <strong>School</strong><br>' +
+          'Optional: <strong>LastName</strong>, <strong>Phone</strong> (or Mobile)' +
+          '<br><span class="template-link" onclick="downloadTemplate()">Download template Excel</span>';
+      }
+    }
+    onRoleChanged();
+
     function downloadTemplate() {
-      const rows = [
-        { FirstName: 'Aarav', LastName: 'Patel', Class: '7', School: 'sch001', Phone: '915555555555' },
-        { FirstName: 'Priya', LastName: 'Sharma', Class: '10', School: 'sch003', Phone: '916666666666' },
-        { FirstName: 'Rahul', LastName: 'Gupta', Class: '5', School: 'sch002', Phone: '' }
-      ];
-      const ws = XLSX.utils.json_to_sheet(rows);
+      const role = document.getElementById('roleSelect').value;
+      let rows, sheetName, fileName;
+      if (role === 'teacher') {
+        rows = [
+          { Role: 'teacher', FirstName: 'Anita', LastName: 'Sharma', Class: '', School: 'sch001', Phone: '9876543210' },
+          { Role: 'teacher', FirstName: 'Ravi', LastName: 'Kumar', Class: '', School: 'sch002', Phone: '9876543211' }
+        ];
+        sheetName = 'Teachers';
+        fileName = 'ZeroSchool-Teacher-Template.xlsx';
+      } else if (role === 'mixed') {
+        rows = [
+          { Role: 'student', FirstName: 'Aarav', LastName: 'Patel', Class: '7', School: 'sch001', Phone: '9876543210' },
+          { Role: 'teacher', FirstName: 'Anita', LastName: 'Sharma', Class: '', School: 'sch001', Phone: '9876543211' }
+        ];
+        sheetName = 'Users';
+        fileName = 'ZeroSchool-Mixed-Template.xlsx';
+      } else {
+        rows = [
+          { Role: 'student', FirstName: 'Aarav', LastName: 'Patel', Class: '7', School: 'sch001', Phone: '9876543210' },
+          { Role: 'student', FirstName: 'Priya', LastName: 'Sharma', Class: '10', School: 'sch003', Phone: '9876543211' },
+          { Role: 'student', FirstName: 'Rahul', LastName: 'Gupta', Class: '5', School: 'sch002', Phone: '' }
+        ];
+        sheetName = 'Students';
+        fileName = 'ZeroSchool-Student-Template.xlsx';
+      }
+      const ws = XLSX.utils.json_to_sheet(rows, { header: ['Role', 'FirstName', 'LastName', 'Class', 'School', 'Phone'] });
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Students');
-      XLSX.writeFile(wb, 'ZeroSchool-Upload-Template.xlsx');
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, fileName);
     }
   </script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
