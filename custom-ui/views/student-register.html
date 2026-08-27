@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Student Registration - ZeroSchool</title>
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .school-option-text { font-size: 0.9em; }
+    .school-location { font-size: 0.85em; color: #666; }
+    select { max-width: 100%; }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -35,8 +40,9 @@
         <div class="form-group">
           <label>School</label>
           <select id="schoolId" required>
-            <option value="">Select school</option>
+            <option value="">Loading schools...</option>
           </select>
+          <small id="schoolError" style="color: red; display: none;"></small>
         </div>
         <div class="form-group">
           <label>Class</label>
@@ -50,15 +56,56 @@
   </div>
   <script>
     async function loadOptions() {
-      const [schools, classes] = await Promise.all([
-        fetch('/api/schools').then(r => r.json()),
-        fetch('/api/classes').then(r => r.json())
-      ]);
-      const ss = document.getElementById('schoolId');
-      schools.forEach(s => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; ss.appendChild(o); });
-      const cs = document.getElementById('className');
-      classes.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = 'Class ' + c; cs.appendChild(o); });
+      try {
+        const schoolSelect = document.getElementById('schoolId');
+        const classSelect = document.getElementById('className');
+        const schoolError = document.getElementById('schoolError');
+        
+        // Load schools
+        const schoolsResp = await fetch('/api/schools');
+        if (!schoolsResp.ok) throw new Error(`Schools API returned ${schoolsResp.status}`);
+        const schools = await schoolsResp.json();
+        
+        if (!Array.isArray(schools) || schools.length === 0) {
+          throw new Error('No schools received from server');
+        }
+        
+        // Clear loading option
+        schoolSelect.innerHTML = '<option value="">Select school</option>';
+        
+        // Add schools with location info
+        schools.forEach(s => {
+          const option = document.createElement('option');
+          option.value = s.id;
+          option.textContent = `${s.name} (${s.location || 'N/A'})`;
+          schoolSelect.appendChild(option);
+        });
+        
+        console.log(`✓ Loaded ${schools.length} schools`);
+        
+        // Load classes
+        const classesResp = await fetch('/api/classes');
+        if (!classesResp.ok) throw new Error(`Classes API returned ${classesResp.status}`);
+        const classes = await classesResp.json();
+        
+        classSelect.innerHTML = '<option value="">Select class</option>';
+        classes.forEach(c => {
+          const option = document.createElement('option');
+          option.value = c;
+          option.textContent = 'Class ' + c;
+          classSelect.appendChild(option);
+        });
+        
+      } catch (err) {
+        console.error('Error loading options:', err);
+        const schoolSelect = document.getElementById('schoolId');
+        const schoolError = document.getElementById('schoolError');
+        schoolSelect.innerHTML = '<option value="">Error loading schools</option>';
+        schoolError.textContent = `⚠️ Error: ${err.message}`;
+        schoolError.style.display = 'block';
+      }
     }
+    
     loadOptions();
 
     function goStep2() {
