@@ -5,6 +5,7 @@ const path = require('path');
 const session = require('express-session');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const csv = require('csv-parser');
 const { Client } = require('pg');
 
 const app = express();
@@ -21,6 +22,58 @@ app.use(session({
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 let savedPAT = null;
+let SCHOOLS = [];
+
+// Load schools from CSV file
+async function loadSchoolsFromCSV() {
+  try {
+    const csvPath = path.join(__dirname, '..', 'data', 'schools.csv');
+    if (fs.existsSync(csvPath)) {
+      const schools = [];
+      return new Promise((resolve, reject) => {
+        fs.createReadStream(csvPath)
+          .pipe(csv())
+          .on('data', (row) => {
+            schools.push({
+              id: row['School Code'],
+              name: row['School Name'],
+              location: row['Location']
+            });
+          })
+          .on('end', () => {
+            console.log(`✓ Loaded ${schools.length} schools from CSV`);
+            resolve(schools);
+          })
+          .on('error', (err) => {
+            console.error('Error reading CSV:', err);
+            reject(err);
+          });
+      });
+    } else {
+      console.warn('CSV file not found at', csvPath);
+      return [];
+    }
+  } catch (err) {
+    console.error('Error loading schools:', err);
+    return [];
+  }
+}
+
+// Initialize schools on startup
+(async () => {
+  const csvSchools = await loadSchoolsFromCSV();
+  if (csvSchools.length > 0) {
+    SCHOOLS = csvSchools;
+  } else {
+    // Fallback to default schools if CSV not found
+    SCHOOLS = [
+      { id: 'sch001', name: 'ZeroSchool Primary', location: 'Default' },
+      { id: 'sch002', name: 'ZeroSchool Secondary', location: 'Default' },
+      { id: 'sch003', name: 'ZeroSchool High School', location: 'Default' },
+      { id: 'sch004', name: 'ZeroSchool Academy', location: 'Default' },
+    ];
+  }
+})();
 
 app.post('/api/save-pat', (req, res) => {
   const { pat } = req.body;
@@ -67,12 +120,6 @@ const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || '387166122471849987';
 const USER_DOMAIN = process.env.USER_DOMAIN || 'zeroschool.org';
 const LEGACY_USER_DOMAIN = 'zeroschool.localhost';
 
-const SCHOOLS = [
-  { id: 'sch001', name: 'ZeroSchool Primary' },
-  { id: 'sch002', name: 'ZeroSchool Secondary' },
-  { id: 'sch003', name: 'ZeroSchool High School' },
-  { id: 'sch004', name: 'ZeroSchool Academy' },
-];
 const CLASSES = ['1','2','3','4','5','6','7','8','9','10','11','12'];
 
 let cachedPAT = null;
