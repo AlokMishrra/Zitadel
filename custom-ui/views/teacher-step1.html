@@ -52,7 +52,7 @@
       schools.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.id;
-        opt.textContent = s.name;
+        opt.textContent = `${s.id} - ${s.name}`;
         schoolSel.appendChild(opt);
       });
     }

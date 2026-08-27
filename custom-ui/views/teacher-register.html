@@ -46,7 +46,7 @@
     async function loadSchools() {
       const schools = await fetch('/api/schools').then(r => r.json());
       const ss = document.getElementById('schoolId');
-      schools.forEach(s => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; ss.appendChild(o); });
+      schools.forEach(s => { const o = document.createElement('option'); o.value = s.id; o.textContent = `${s.id} - ${s.name}`; ss.appendChild(o); });
     }
     loadSchools();
 

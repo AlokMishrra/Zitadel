@@ -77,7 +77,7 @@
         schools.forEach(s => {
           const option = document.createElement('option');
           option.value = s.id;
-          option.textContent = `${s.name} (${s.location || 'N/A'})`;
+          option.textContent = `${s.id} - ${s.name} (${s.location || 'N/A'})`;
           schoolSelect.appendChild(option);
         });
         
