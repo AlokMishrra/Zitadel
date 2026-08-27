@@ -1,0 +1,133 @@
+School Code,School Name,Location
+S1,Vivekanand Vidya Mandir.I.C. Gangolihat,Gangolihat Town, Pithoragarh District, Uttarakhand
+S2,Vivekananda Vidya Mandir E.C. Munsyari,Munsyari Town, Pithoragarh District, Uttarakhand
+S3,Vivekananda Vidya Mandir E.C. Champawat,Champawat Town, Champawat District, Uttarakhand
+S4,Vivekananda Vidya Mandir E.C. Pati,Paaty Area, Champawat District, Uttarakhand
+S5,Vivekananda Vidhya Mandir I.C. Hichowdi,Hichowdi, Kapkot, Bageshwar District, Uttarakhand
+S6,Saraswati Vidya Mandir.E.C. Chhoi Ramnagar,Chhoi Area, Ramnagar, Nainital District, Uttarakhand
+S7,Saraswati Vidya Mandir.E.C. Patrampur Jaspur,Patrampur Area, Jaspur, Udham Singh Nagar District, Uttarakhand
+S8,Saraswati Vidya Mandir E.C. Chaitimod Kashipur,Chaiti Mod Area, Kashipur, Udham Singh Nagar District, Uttarakhand
+S9,Saraswati Vidya Mandir.E.C. Bajpur,Bajpur, Udham Singh Nagar, Uttarakhand
+S10,Saraswati Balika Vidya Mandir E.C. Bajpur,Bajpur, Udham Singh Nagar, Uttarakhand
+S11,Saraswati Vidya Mandir E.C. Nanakmatta,Nanakmatta, Udham Singh Nagar, Uttarakhand
+S12,Saraswati Vidya Mandir E.C. Gauchar, Chamoli,Gauchar, Chamoli, Uttarakhand
+S13,Saraswati Vidya Mandir .I.C. Gairsain,Gairsain, Chamoli, Uttarakhand
+S14,Saraswati Vidya Mandir E.C. Joshimath,Joshimath, Chamoli, Uttarakhand
+S15,Saraswati Vidya Mandir U.M.V. Karnaprayag,Karnaprayag, Chamoli, Uttarakhand
+S16,Saraswati Vidya Mandir E.C. Ukhimath,Ukhimath, Rudraprayag, Uttarakhand
+S17,Saraswati Vidya Mandir E.C. Jankinagar,Kotdwar (Jankinagar), Pauri Garhwal, Uttarakhand
+S18,Saraswati Vidya Mandir Laksheshwar,Laksheshwar, Haridwar, Uttarakhand
+S19,Saraswati Vidya Mandir E.C. New Tehri, Tehri Garhwal,New Tehri, Tehri Garhwal, Uttarakhand
+S20,Saraswati Vidya Mandir E.C. Ghanshali,Ghanshali, Tehri Garhwal, Uttarakhand
+S21,Saraswati Vidya Mandir E.C. Jakhnidhar,Jakhnidhar, Tehri Garhwal, Uttarakhand
+S22,Saraswati Vidya Mandir E.C. Dharmapur, Dehradun,Dharmapur, Dehradun, Uttarakhand
+S23,Saraswati Vidya Mandir High School, Dakpathar,Dakpathar, Dehradun, Uttarakhand
+S24,Saraswati Vidya Mandir E.C. Dhalipur,Dhalipur, Dehradun, Uttarakhand
+S25,Saraswati Vidya Mandir .I.C. Doiwala,Doiwala, Dehradun, Uttarakhand
+S26,Saraswati Vidya Mandir E.K.A.V. Rishikesh,Rishikesh, Dehradun, Uttarakhand
+S27,Saraswati Vidya Mandir E.C. Manduwala (CBSE),Manduwala, Dehradun, Uttarakhand
+S28,Anand Swaroop Arya S.V.M. E.C. Roorkee (C.B.S.E),Roorkee, Haridwar, Uttarakhand
+S29,Saraswati Vidya Mandir E.C. Roorkee, Haridwar,Roorkee, Haridwar, Uttarakhand
+S30,Saraswati Vidya Mandir U.M.V kila kashipur,Kashipur, Udham Singh Nagar, Uttarakhand
+S31,Saraswati Vidya Mandir E.C. Brahmpur Roorkee,Brahmpur (Roorkee), Haridwar, Uttarakhand
+S32,Vivekananda Vidya Mandir E.C. Dwarahat,Dwarahat, Almora, Uttarakhand
+S33,Saraswati Vidya Mandir E.C. Jaitpur Kashipur,Jaitpur (Kashipur), Udham Singh Nagar, Uttarakhand
+S34,Saraswati Balika Vidya Mandir E.C. Kashipur,Kashipur, Udham Singh Nagar, Uttarakhand
+S35,Saraswati Vidya Mandir E.K. Ranipur, Haridwar,Ranipur, Haridwar, Uttarakhand
+S36,Saraswati Vidya Mandir U.M.V. Pamda Barakot,Pamda Barakot, Champawat, Uttarakhand
+S37,Saraswati Vidya Mandir U.M.V. Chhaam,Chham,Tehri Garhwal,Uttarakhand
+S38,Saraswati Vidya Mandir Ramnagar Ban Jaspur,Ramnagar Ban, Jaspur, Udham Singh Nagar, Uttarakhand
+S39,Parvati Prega Jagati Saraswati Vihar Nainital (CBSE),Nainital, Nainital, Uttarakhand
+S40,Vivekananda Vidya Mandir E.C. Tanakpur,Tanakpur, Champawat, Uttarakhand
+S41,Saraswati Vidya Mandir .E.C.Shantipuri,Shantipuri, Udham Singh Nagar, Uttarakhand
+S42,Saraswati Vidya Mandir E.C. Shrikot Ganganali,Shrikot Ganganali, Pauri Garhwal, Uttarakhand
+S43,Saraswati Vidya Mandir E.C. Jyotipuram,Jyotipuram, Rudraprayag, Uttarakhand
+S44,Saraswati Vidya Mandir E.C. Madhichauras,Madhichauras, Pauri Garhwal, Uttarakhand
+S45,Saraswati Vidya Mandir .I.K.Bhaniyawala,Bhaniyawala, Dehradun, Uttarakhand
+S46,Saraswati Balika Vidya Mandir E.C. Pithoragarh,Pithoragarh, Pithoragarh, Uttarakhand
+S47,Saraswati Vidya Mandir High School Banbasa,Banbasa, Champawat, Uttarakhand
+S48,Saraswati Vidya Mandir E.C. Tadikhet,Tadikhet, Almora, Uttarakhand
+S49,Vivekananda Vidya Mandir E.C. khetikhan,Khetikhan, Champawat, Uttarakhand
+S50,Saraswati Girls Education Temple, Lohaghat,Lohaghat, Champawat, Uttarakhand
+S51,Saraswati Vidya Mandir E.C. Mayapur, Haridwar,Mayapur, Haridwar, Uttarakhand
+S52,Saraswati Vidya Mandir Rudrapur,Rudrapur, Udham Singh Nagar, Uttarakhand
+S53,Saraswati Shishu Mandir College. Kalyani Vyu Rudrapur,Kalyani View, Rudrapur, Udham Singh Nagar, Uttarakhand
+S54,Vivekananda Vidya Mandir E.C. Pithoragarh,bin, Jakhni, Pithoragarh, Uttarakhand 262501
+S55,Saraswati Balika Vidya Mandir Higher Secondary School Jeevandham Almora,Jeevan Dham, Almora, Uttarakhand
+S56,Saraswati Vidya Mandir, Badechina,Barechhina, Dugari, Uttarakhand 263624
+S57,Saraswati Vidya Mandir E.C. Nathuwawala,Old Officers Colony, Dehradun-248001, Uttarakhand
+S58,Gorwagi Ganesh Dutt Saraswati Vidya Mandir District-Uttarkashi,Mall Rd, Uttarkashi, Uttarakhand 249193
+S59,Vivekananda Vidya Mandir U.M.V.Kanda,Kanda, Bageshwar, Uttarakhand
+S60,Vivekananda Vidya Mandir Danya, Almora,Danya, Almora, Uttarakhand
+S61,Narendra Ajayshah Jagati S.V.M. Mallital,Mallital, Nainital, Uttarakhand
+S62,Saraswati Vidya Mandir Nandanagar,Nandanagar (Ghat), Chamoli, Uttarakhand
+S63,Saraswati Vidya Mandir U.M.V. Agastyamuni,Agastyamuni, Rudraprayag, Uttarakhand
+S64,Saraswati Vidya Mandir Tilwada,Tilwada, Rudraprayag, Uttarakhand
+S65,Saraswati Vidya Mandir. E.C. Devprayag,Devprayag, Tehri Garhwal, Uttarakhand
+S66,Shersingh karki saraswati vihar muwaani, pithoragarh,Muwaani, Pithoragarh, Uttarakhand
+S67,Saraswati Vidya Mandir Higher Secondary School, Damta,Damta, Uttarkashi, Uttarakhand
+S68,Vivekananda Vidya Mandir Dewalthal,Dewalthal, Pithoragarh, Uttarakhand
+S69,Saraswati Vidya Mandir Higher Secondary School Chaukhutia,Chaukhutia Bridge, Chaukhutiya, Malla Tajpur, Almora, Uttarakhand, 263656
+S70,Saraswati Vidya Mandir U.M.V. Bhagirathipuram,Tehri Garhwal,Bhagirathipuram,Tehri Garhwal
+S71,Saraswati Vidya Mandir Brahmakhal,Jemar, Geonla, Uttarkashi-249152, Uttarakhand
+S72,ASHU PUBLIC INTER COLLEGE,Roorkee
+S73,Shivalik Sr. Secondary School,Roorkee
+S74,Adarsh Bal Niketan Sr. Sec. School,Roorkee
+S75,Bhartiya Academy,Roorkee
+S76,Mount Litera Zee School, bhagwanpur,Roorkee
+S77,Mount Litera Zee School, Roorkee,Roorkee
+S78,Foothills Academy,Rishikesh
+S79,AUGIC TAILA,Taila–Silgarh, Rudraprayag
+S80,Pm shri augic rudraprayag,Rudraprayag
+S81,Doon Convent School,Haldwani
+S82,Imperium Sr. Sec. School,Haldwani
+S83,GIC Machhor,Machhor, Almora
+S84,Shree Yogeshwar Public School, Roorkee,Roorkee
+S85,Roorkee Public Sr. Sec. School,Roorkee
+S86,St. Mark's Senior Secondary school,Roorkee
+S87,Tula's International School,Dehradun
+S88,New Era Senior Secondary School,Roorkee / Iqbalpur
+S89,Beersheba Sr Sec School Haldwani,Haldwani
+S90,MAHARISHI VIDYA MANDIR HALDWANI,Haldwani
+S91,Phoenix Senior Secondary School,Kichha
+S92,PM Shri Kendriya vidyalaya No.1 Roorkee,Roorkee
+S93,PM shri K. V. No.2 roorkee,Roorkee
+S94,Cantt. Board School Roorkee,Roorkee
+S95,Fylfot Public School,Dehradun
+S96,RAJEEV GANDHI NAVODAYA VIDYALYA DEVALDHAR,Tehri garhwal devaldhar
+S97,Rajeev Gandhi Navodaya Vidyalaya Khatima,Khatima
+S98,UNIVERSAL CONVENT SR. SEC. SCHOOL,HALDWANI
+S99,PM SHRI SCHOOL JAWAHAR NAVODAYA VIDYALAYA,HARIDWAR
+S100,Children's Senior Academy,Roorkee
+S101,Sarvagya Sr Sc Public School,Roorkee
+S102,DPS ( Roorkee ),Roorkee
+S103,St. John's Senior Secondary School,Roorkee
+S104,The Laureate School Roorkee,Roorkee
+S105,Aryaman Vikram Birla Institute of Learning,HALDWANI
+S106,Chandra Shaikhar Senior Secondary Public School,Roorkee
+S107,DEVAS PUBLIC SCHOOL,Baghpat
+S108,Delhi Public School Baghpat,Baghpat
+S109,KHALSA PUBLIC SCHOOL,Saharanpur
+S110,Krishna International School,Gangoh(UP)
+S111,AMBITION CONVENT SCHOOL,Ballia
+S112,St.Xaviers Senior Secondary School Basti,Basti
+S113,B K PUBLIC SCHOOL,Hardoi
+S114,Ambrosia Academy,Sakaldiha
+S115,Souvanns Millennium Public School,Gonda (UP)
+S116,B.S.S. EDUCATION CENTRE,Kanpur
+S117,SACRED HEART SCHOOL,Lucknow
+S118,De Montfort Acadmey,Meerut
+S119,Maples Academy,Budhana, Muzaffarnagar
+S120,Swami Ram Tirth Public School,Saharanpur
+S121,K. L. G. Public School,Saharanpur
+S122,BASANT VALLEY PUBLIC SCHOOL,VILL GARHI HARSARU SEC - 89 B GURUGRAM
+S123,Bal Bharti Public School,BAL BHARATI PUBLIC SCHOOL, SEC-1 IMT MANESAR
+S124,DAV Police Public School, Hisar,Police Lines Area, Hisar, Hisar District, Haryana
+S125,DOON INTERNATIONAL SCHOOL,Tosham Road Hisar, Haryana (PIN: 125005)
+S126,DAV Public School Ballabhgarh,Opposite Vita Milk Plant , Ballabhgarh, Faridabad, Haryana- 121004
+S127,Akal Academy Ajitsar, Ratia,Village Hamjapur, Tehsil Ratia,Distt Fatehabad
+S128,Dav Centenary Public School, Jind,Urban Estate, 1350, Defence Colony, Block A, Sector 10, Urban Estate, Jind, Haryana
+S129,Columbia Foundation Sr. Sec. School,D - Block, Vikaspuri, New Delhi - 110018
+S130,Delhi International School, Sector 23, Dwarka,Delhi International School, Sector 23 Dwarka
+S131,Ramjas Public School Day Boarding,Lane No. 10, Punjabi Basti,ANAND PARVAT, NEW DELHI 110005
+S132,A.S.V.J.SR.SEC.SCHOOL,DARYA GANJ , NEW DELHI - 110002

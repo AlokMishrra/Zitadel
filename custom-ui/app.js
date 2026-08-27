@@ -24,14 +24,33 @@ const upload = multer({ dest: path.join(__dirname, 'uploads') });
 let savedPAT = null;
 let SCHOOLS = [];
 
+function resolveSchoolsCSVPath() {
+  const configuredPath = (process.env.SCHOOLS_CSV_PATH || '').trim();
+  const candidates = [];
+
+  if (configuredPath) {
+    candidates.push(path.resolve(configuredPath));
+  }
+
+  candidates.push(
+    path.join(__dirname, 'data', 'schools.csv'),
+    path.join(__dirname, '..', 'data', 'schools.csv'),
+    '/data/schools.csv'
+  );
+
+  const csvPath = candidates.find((candidatePath) => fs.existsSync(candidatePath));
+  return { csvPath, candidates };
+}
+
 // Load schools from CSV file SYNCHRONOUSLY on startup
 function loadSchoolsFromCSVSync() {
-  const csvPath = path.join(__dirname, '..', 'data', 'schools.csv');
-  console.log(`📚 Looking for CSV at: ${csvPath}`);
+  const { csvPath, candidates } = resolveSchoolsCSVPath();
 
-  if (!fs.existsSync(csvPath)) {
-    throw new Error(`Required CSV file not found at ${csvPath}`);
+  if (!csvPath) {
+    throw new Error(`Required CSV file not found. Checked: ${candidates.join(', ')}`);
   }
+
+  console.log(`📚 Using CSV at: ${csvPath}`);
 
   const csvContent = fs.readFileSync(csvPath, 'utf8');
   const lines = csvContent.split('\n');
