@@ -24,56 +24,72 @@ const upload = multer({ dest: path.join(__dirname, 'uploads') });
 let savedPAT = null;
 let SCHOOLS = [];
 
-// Load schools from CSV file
-async function loadSchoolsFromCSV() {
+// Load schools from CSV file SYNCHRONOUSLY on startup
+function loadSchoolsFromCSVSync() {
   try {
     const csvPath = path.join(__dirname, '..', 'data', 'schools.csv');
-    if (fs.existsSync(csvPath)) {
-      const schools = [];
-      return new Promise((resolve, reject) => {
-        fs.createReadStream(csvPath)
-          .pipe(csv())
-          .on('data', (row) => {
-            schools.push({
-              id: row['School Code'],
-              name: row['School Name'],
-              location: row['Location']
-            });
-          })
-          .on('end', () => {
-            console.log(`✓ Loaded ${schools.length} schools from CSV`);
-            resolve(schools);
-          })
-          .on('error', (err) => {
-            console.error('Error reading CSV:', err);
-            reject(err);
-          });
-      });
-    } else {
-      console.warn('CSV file not found at', csvPath);
+    console.log(`📚 Looking for CSV at: ${csvPath}`);
+    
+    if (!fs.existsSync(csvPath)) {
+      console.warn(`⚠️  CSV file NOT found at ${csvPath}`);
       return [];
     }
+    
+    const csvContent = fs.readFileSync(csvPath, 'utf8');
+    const lines = csvContent.split('\n');
+    const schools = [];
+    
+    if (lines.length < 2) {
+      console.warn('⚠️  CSV file is empty or has no data rows');
+      return [];
+    }
+    
+    // Parse CSV manually (simple approach)
+    // Format: School Code,School Name,Location
+    const headers = lines[0].split(',').map(h => h.trim());
+    const codeIndex = headers.findIndex(h => h.includes('Code'));
+    const nameIndex = headers.findIndex(h => h.includes('Name'));
+    const locationIndex = headers.findIndex(h => h.includes('Location'));
+    
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length < 2) continue;
+      
+      schools.push({
+        id: parts[codeIndex] || parts[0],
+        name: parts[nameIndex] || parts[1],
+        location: parts[locationIndex] || parts[2] || 'Unknown'
+      });
+    }
+    
+    console.log(`✅ Successfully loaded ${schools.length} schools from CSV`);
+    if (schools.length > 0) {
+      console.log(`   Sample: ${schools[0].name} (${schools[0].location})`);
+    }
+    
+    return schools;
   } catch (err) {
-    console.error('Error loading schools:', err);
+    console.error('❌ Error loading schools from CSV:', err.message);
     return [];
   }
 }
 
 // Initialize schools on startup
-(async () => {
-  const csvSchools = await loadSchoolsFromCSV();
-  if (csvSchools.length > 0) {
-    SCHOOLS = csvSchools;
-  } else {
-    // Fallback to default schools if CSV not found
-    SCHOOLS = [
-      { id: 'sch001', name: 'ZeroSchool Primary', location: 'Default' },
-      { id: 'sch002', name: 'ZeroSchool Secondary', location: 'Default' },
-      { id: 'sch003', name: 'ZeroSchool High School', location: 'Default' },
-      { id: 'sch004', name: 'ZeroSchool Academy', location: 'Default' },
-    ];
-  }
-})();
+console.log('🚀 ZeroSchool starting up...');
+SCHOOLS = loadSchoolsFromCSVSync();
+
+if (SCHOOLS.length === 0) {
+  console.warn('⚠️  No schools loaded from CSV, using FALLBACK defaults');
+  SCHOOLS = [
+    { id: 'sch001', name: 'ZeroSchool Primary', location: 'Default' },
+    { id: 'sch002', name: 'ZeroSchool Secondary', location: 'Default' },
+    { id: 'sch003', name: 'ZeroSchool High School', location: 'Default' },
+    { id: 'sch004', name: 'ZeroSchool Academy', location: 'Default' },
+  ];
+}
 
 app.post('/api/save-pat', (req, res) => {
   const { pat } = req.body;
@@ -106,6 +122,7 @@ app.get('/api/wipe-db', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'));
 
 const PORT = 3000;
@@ -114,9 +131,6 @@ const ZITADEL_INTERNAL = process.env.ZITADEL_INTERNAL || 'http://zitadel:8080';
 const PAT_FILE = process.env.PAT_FILE || '/zitadel/bootstrap/admin.pat';
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || '387166122471849987';
 
-// Users log in with their email address, so the ZITADEL username and the email
-// are the same value. LEGACY_USER_DOMAIN is only kept so accounts created
-// before this change can still sign in.
 const USER_DOMAIN = process.env.USER_DOMAIN || 'zeroschool.org';
 const LEGACY_USER_DOMAIN = 'zeroschool.localhost';
 
@@ -134,18 +148,12 @@ function getPAT() {
     try { cachedPAT = JSON.parse(raw).token || raw; } catch { cachedPAT = raw; }
     if (cachedPAT) return cachedPAT;
   } catch (e) { /* fall through to the explicit error below */ }
-  // Previously this returned null and zitadelHeaders() sent the literal string
-  // "Bearer null", which ZITADEL rejects as Errors.Token.Invalid (AUTH-7fs1e).
-  // Fail loudly instead so the real cause is obvious.
   throw new Error(
     'No ZITADEL service token available. Set the ZITADEL_PAT environment variable ' +
     `(or place a token at ${PAT_FILE}, or POST one to /api/save-pat).`
   );
 }
 
-// Drop the cached token so the next call re-reads env/file. Used when ZITADEL
-// rejects the token, e.g. after the instance was re-initialised and the old
-// PAT no longer exists.
 function invalidatePAT() {
   cachedPAT = null;
   savedPAT = null;
@@ -158,9 +166,6 @@ function isAuthError(err) {
 }
 
 function zitadelHeaders() {
-  // Host must match ZITADEL's configured ExternalDomain. Derive it from the
-  // target URL rather than hardcoding, so changing ZITADEL_INTERNAL can't
-  // silently produce a mismatched Host header.
   let host;
   try { host = new URL(ZITADEL_INTERNAL).host; } catch (e) { host = 'zeroschool-zitadel.onrender.com'; }
   return { Authorization: `Bearer ${getPAT()}`, Host: host, 'Content-Type': 'application/json' };
@@ -176,9 +181,6 @@ function detectRole(host) {
 
 const c = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-// ZITADEL parses phone numbers to E.164 and, without a country code, falls back
-// to its own default (observed: +41 Switzerland), silently corrupting the number.
-// Always send an explicit country code.
 const DEFAULT_PHONE_CC = process.env.DEFAULT_PHONE_COUNTRY_CODE || '+91';
 
 function normalizePhone(phone) {
@@ -188,7 +190,6 @@ function normalizePhone(phone) {
   const digits = raw.replace(/\D/g, '');
   if (!digits) return null;
   const cc = DEFAULT_PHONE_CC.replace(/\D/g, '');
-  // Already prefixed with the country code but missing the leading '+'.
   if (digits.length > 10 && digits.startsWith(cc)) return '+' + digits;
   return DEFAULT_PHONE_CC + digits;
 }
@@ -284,7 +285,12 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/schools', (req, res) => res.json(SCHOOLS));
+// API endpoint to get schools
+app.get('/api/schools', (req, res) => {
+  console.log(`📤 Sending ${SCHOOLS.length} schools to client`);
+  res.json(SCHOOLS);
+});
+
 app.get('/api/classes', (req, res) => res.json(CLASSES));
 
 app.get('/api/generate-email', async (req, res) => {
@@ -331,10 +337,6 @@ app.post('/api/login', async (req, res) => {
     const shortName = loginName.split('@')[0];
     const primaryLoginName = shortName + '@' + USER_DOMAIN;
 
-    // Whatever the user types, try the current form first, then the legacy
-    // .localhost form (accounts created before the domain change), then the
-    // bare username. Keep the first error so a genuine bad-password isn't
-    // masked by a later "user not found".
     const attempts = [primaryLoginName, shortName + '@' + LEGACY_USER_DOMAIN, shortName];
     let resp = null;
     let firstErr = null;
@@ -389,8 +391,6 @@ app.post('/api/register/student', async (req, res) => {
         created = await tryCreateStudent(firstName, lastName, className, schoolId, phone, password, loginName);
         break;
       } catch (err) {
-        // A rejected service token is not a username collision. Re-read the
-        // token once in case it was rotated, then give up with a clear error.
         if (isAuthError(err) && !retriedAuth) {
           retriedAuth = true;
           invalidatePAT();
@@ -502,8 +502,6 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
 
     if (rows.length === 0) return res.status(400).json({ error: 'Empty file' });
 
-    // Default role for rows that don't carry their own "Role" column. Lets you
-    // upload a teacher-only sheet without adding a Role column to every row.
     const defaultRole = String(req.body?.role || req.query?.role || 'student').trim().toLowerCase() === 'teacher'
       ? 'teacher' : 'student';
 
@@ -520,7 +518,6 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
       const rawRole = (row.Role || row.role || row['Role'] || '').toString().trim().toLowerCase();
       const role = rawRole === 'teacher' ? 'teacher' : (rawRole === 'student' ? 'student' : defaultRole);
 
-      // Teachers have no class; they need a last name to build a unique login.
       const missing = [];
       if (!firstName) missing.push('FirstName');
       if (!schoolId) missing.push('School');
@@ -555,8 +552,6 @@ app.post('/api/bulk-upload', upload.single('file'), async (req, res) => {
               : await tryCreateStudent(firstName, lastName, className, resolvedSchoolId, phone, password, loginName);
             break;
           } catch (retryErr) {
-            // A rejected service token is not a username collision - stop
-            // instead of burning through all 101 candidates.
             if (isAuthError(retryErr)) {
               if (retriedAuth) throw retryErr;
               retriedAuth = true;
@@ -668,5 +663,6 @@ app.get('/api/bulk-template', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`ZeroSchool running on http://localhost:${PORT}`);
+  console.log(`✅ ZeroSchool running on http://localhost:${PORT}`);
+  console.log(`📚 Loaded ${SCHOOLS.length} schools`);
 });
