@@ -26,69 +26,62 @@ let SCHOOLS = [];
 
 // Load schools from CSV file SYNCHRONOUSLY on startup
 function loadSchoolsFromCSVSync() {
-  try {
-    const csvPath = path.join(__dirname, '..', 'data', 'schools.csv');
-    console.log(`📚 Looking for CSV at: ${csvPath}`);
-    
-    if (!fs.existsSync(csvPath)) {
-      console.warn(`⚠️  CSV file NOT found at ${csvPath}`);
-      return [];
-    }
-    
-    const csvContent = fs.readFileSync(csvPath, 'utf8');
-    const lines = csvContent.split('\n');
-    const schools = [];
-    
-    if (lines.length < 2) {
-      console.warn('⚠️  CSV file is empty or has no data rows');
-      return [];
-    }
-    
-    // Parse CSV manually (simple approach)
-    // Format: School Code,School Name,Location
-    const headers = lines[0].split(',').map(h => h.trim());
-    const codeIndex = headers.findIndex(h => h.includes('Code'));
-    const nameIndex = headers.findIndex(h => h.includes('Name'));
-    const locationIndex = headers.findIndex(h => h.includes('Location'));
-    
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      const parts = line.split(',').map(p => p.trim());
-      if (parts.length < 2) continue;
-      
-      schools.push({
-        id: parts[codeIndex] || parts[0],
-        name: parts[nameIndex] || parts[1],
-        location: parts[locationIndex] || parts[2] || 'Unknown'
-      });
-    }
-    
-    console.log(`✅ Successfully loaded ${schools.length} schools from CSV`);
-    if (schools.length > 0) {
-      console.log(`   Sample: ${schools[0].name} (${schools[0].location})`);
-    }
-    
-    return schools;
-  } catch (err) {
-    console.error('❌ Error loading schools from CSV:', err.message);
-    return [];
+  const csvPath = path.join(__dirname, '..', 'data', 'schools.csv');
+  console.log(`📚 Looking for CSV at: ${csvPath}`);
+
+  if (!fs.existsSync(csvPath)) {
+    throw new Error(`Required CSV file not found at ${csvPath}`);
   }
+
+  const csvContent = fs.readFileSync(csvPath, 'utf8');
+  const lines = csvContent.split('\n');
+  const schools = [];
+
+  if (lines.length < 2) {
+    throw new Error('CSV file is empty or has no data rows');
+  }
+
+  // Parse CSV manually (simple approach)
+  // Format: School Code,School Name,Location
+  const headers = lines[0].split(',').map(h => h.trim());
+  const codeIndex = headers.findIndex(h => h.includes('Code'));
+  const nameIndex = headers.findIndex(h => h.includes('Name'));
+  const locationIndex = headers.findIndex(h => h.includes('Location'));
+
+  if (codeIndex === -1 || nameIndex === -1) {
+    throw new Error('CSV headers must include school code and school name columns');
+  }
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const parts = line.split(',').map(p => p.trim());
+    if (parts.length < 2) continue;
+
+    schools.push({
+      id: parts[codeIndex] || parts[0],
+      name: parts[nameIndex] || parts[1],
+      location: parts[locationIndex] || parts[2] || 'Unknown'
+    });
+  }
+
+  if (schools.length === 0) {
+    throw new Error('CSV file does not contain any valid school rows');
+  }
+
+  console.log(`✅ Successfully loaded ${schools.length} schools from CSV`);
+  console.log(`   Sample: ${schools[0].name} (${schools[0].location})`);
+  return schools;
 }
 
 // Initialize schools on startup
 console.log('🚀 ZeroSchool starting up...');
-SCHOOLS = loadSchoolsFromCSVSync();
-
-if (SCHOOLS.length === 0) {
-  console.warn('⚠️  No schools loaded from CSV, using FALLBACK defaults');
-  SCHOOLS = [
-    { id: 'sch001', name: 'ZeroSchool Primary', location: 'Default' },
-    { id: 'sch002', name: 'ZeroSchool Secondary', location: 'Default' },
-    { id: 'sch003', name: 'ZeroSchool High School', location: 'Default' },
-    { id: 'sch004', name: 'ZeroSchool Academy', location: 'Default' },
-  ];
+try {
+  SCHOOLS = loadSchoolsFromCSVSync();
+} catch (err) {
+  console.error(`❌ Fatal startup error: ${err.message}`);
+  process.exit(1);
 }
 
 app.post('/api/save-pat', (req, res) => {
